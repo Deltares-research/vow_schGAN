@@ -17,23 +17,30 @@ import logging
 from geolib_plus.gef_cpt import GefCpt
 from utils import read_files
 
-# --------------------------------------------------------------------------
 # Disable noisy GeoLib logging
-# --------------------------------------------------------------------------
 initial_logging_level = logging.getLogger().getEffectiveLevel()
 logging.disable(logging.ERROR)
 logging.getLogger().setLevel(logging.ERROR)
 
 
-# --------------------------------------------------------------------------
 # Check if file has coordinates
-# --------------------------------------------------------------------------
 def check_file_for_coords(
     cpt_object: GefCpt, file: Path, cpt_folder: Path, sucess_count: int, fail_count: int
 ):
     """
     Check if a GEF file has valid coordinates. If not, move the file to a subfolder "no_coords".
     Additional rule: if x or y equals 0.0, treat it as missing.
+
+    Params:
+        cpt_object (GefCpt): The CPT object to check.
+        file (Path): The path to the CPT file.
+        cpt_folder (Path): The folder containing the CPT files.
+        sucess_count (int): Count of files with valid coordinates.
+        fail_count (int): Count of files without valid coordinates.
+
+    Returns:
+        sucess_count (int): Updated count of files with valid coordinates.
+        fail_count (int): Updated count of files without valid coordinates.
     """
     try:
         x, y = cpt_object.coordinates  # tuple (x, y)
@@ -64,9 +71,7 @@ def check_file_for_coords(
     return sucess_count, fail_count
 
 
-# --------------------------------------------------------------------------
 # Fix incorrect coordinate scaling
-# --------------------------------------------------------------------------
 def fix_broken_coords(cpt_object: GefCpt):
     """
     Check and fix coordinates that are clearly scaled or formatted incorrectly.
@@ -77,6 +82,9 @@ def fix_broken_coords(cpt_object: GefCpt):
       - If already 6 digits -> keep as is.
       - If <1000 -> multiply by 1000 (common scaling issue).
       - Otherwise -> keep unchanged.
+
+    Params:
+        cpt_object (GefCpt): The CPT object with coordinates to check and fix.
 
     Returns:
         tuple: (x_fixed, y_fixed, was_fixed)
@@ -118,12 +126,17 @@ def fix_broken_coords(cpt_object: GefCpt):
     return x_fixed, y_fixed, was_fixed
 
 
-# --------------------------------------------------------------------------
 # Save CSV
-# --------------------------------------------------------------------------
 def save_coordinates_to_csv(rows, output_csv: Path):
     """
     Save extracted and (optionally) fixed coordinates to a CSV file.
+
+    Params:
+        rows (list): List of rows to write to the CSV. Each row is a list: [name, x, y, fixed].
+        output_csv (Path): Path to the output CSV file. Will be created if it doesn't exist.
+
+    Returns:
+        None
     """
     output_csv.parent.mkdir(parents=True, exist_ok=True)
 
@@ -135,13 +148,18 @@ def save_coordinates_to_csv(rows, output_csv: Path):
     print(f"✅ Coordinates saved to: {output_csv}")
 
 
-# --------------------------------------------------------------------------
 # Main process
-# --------------------------------------------------------------------------
 def process_cpt_coords(cpt_folder: Path, output_csv: Path) -> None:
     """
     Process .GEF files in a specified folder to extract and validate coordinates,
     then save the results to a CSV file.
+
+    Params:
+        cpt_folder (Path): Path to the folder containing .GEF files.
+        output_csv (Path): Path to the output CSV file.
+
+    Returns:
+        None
     """
     all_files = read_files(str(cpt_folder), extension=".gef")
     print(f"Processing {len(all_files)} files for coordinates...")

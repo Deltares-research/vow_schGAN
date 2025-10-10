@@ -1,10 +1,12 @@
 import os
-from pathlib import Path
+import math
+import logging
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
-import math
-import logging
+
+from utils import read_files
+from pathlib import Path
 
 from geolib_plus.gef_cpt import GefCpt
 from geolib_plus.robertson_cpt_interpretation import RobertsonCptInterpretation
@@ -12,30 +14,27 @@ from geolib_plus.robertson_cpt_interpretation import (
     UnitWeightMethod,
     InterpretationMethod,
 )
-from utils import read_files
 
-# to avoid warnings coming from GeoLib
+# Disable noisy GeoLib logging
 initial_logging_level = logging.getLogger().getEffectiveLevel()
 logging.disable(logging.ERROR)
+logging.getLogger().setLevel(logging.ERROR)
 
 
-def process_cpts(cpts):
+def process_cpts(gef_list: list[Path]):
     """
     Process CPT files using geolib_plus library.
 
-    Parameters
-    ----------
-    cpts: list
-        List of CPT file paths.
+    Params:
+    gef_list: list of Path
 
-    Returns
-    -------
-    data: list
-        List of dictionaries with processed CPT data.
+    Returns:
+    data: list of dicts with CPT data
+    coords: list of dicts with CPT coordinates
     """
     data = []
     coords = []
-    for cpt in cpts:
+    for cpt in gef_list:
         cpt_gef = GefCpt()
         try:
             cpt_gef.read(cpt)
@@ -88,19 +87,14 @@ def save_coords_to_csv(coords: list, output_dir: str):
     print(f"CPT coordinates saved to: {output_file}")
 
 
-def equalize_top(data_cpts):
+def equalize_top(data_cpts: list[dict]) -> list[dict]:
     """
     Equalize the starting depth of all CPTs by removing IC and depth data above the lowest maximum depth.
 
-    Parameters
-    ----------
-    data_cpts: list
-        List of dictionaries containing CPT data.
-
-    Returns
-    -------
-    equalized_cpts: list
-        List of dictionaries with adjusted depth and IC data.
+    Params:
+    data_cpts: list of dicts with CPT data
+    Returns:
+    equalized_cpts: list of dicts with equalized CPT data
     """
     # Make a copy of the original data to keep it unchanged
     equalized_cpts = []
