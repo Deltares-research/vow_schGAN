@@ -1,3 +1,5 @@
+# This code makes the 32 px CPT csv file. This does NOT make the sections filled with zeros.
+
 import os
 import math
 import logging
