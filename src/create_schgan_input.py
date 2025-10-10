@@ -26,11 +26,11 @@ def process_cpts(gef_list: list[Path]):
     Process CPT files using geolib_plus library.
 
     Params:
-    gef_list: list of Path
+        gef_list (list[Path]): List of paths to GEF files.
 
     Returns:
-    data: list of dicts with CPT data
-    coords: list of dicts with CPT coordinates
+        data (list): List of dicts with CPT data.
+        coords (list): List of dicts with CPT coordinates.
     """
     data = []
     coords = []
@@ -79,6 +79,13 @@ def process_cpts(gef_list: list[Path]):
 def save_coords_to_csv(coords: list, output_dir: str):
     """
     Save CPT coordinates to a CSV file with columns: Name, x, y
+
+    Params:
+        coords (list): List of dicts with CPT coordinates
+        output_dir (str): Directory where the CSV file will be saved
+
+    Returns:
+        None
     """
     os.makedirs(output_dir, exist_ok=True)
     df = pd.DataFrame(coords)
@@ -92,9 +99,10 @@ def equalize_top(data_cpts: list[dict]) -> list[dict]:
     Equalize the starting depth of all CPTs by removing IC and depth data above the lowest maximum depth.
 
     Params:
-    data_cpts: list of dicts with CPT data
+        data_cpts (list): List of dictionaries containing CPT data.
+
     Returns:
-    equalized_cpts: list of dicts with equalized CPT data
+        list: List of dictionaries with equalized CPT data.
     """
     # Make a copy of the original data to keep it unchanged
     equalized_cpts = []
@@ -137,18 +145,12 @@ def equalize_depth(data_cpts, lowest_min_depth):
     Equalize the depth of all CPTs by extending their depths to the lowest minimum depth.
     New depth values are added starting from the current min depth.
 
-    Parameters
-    ----------
-    data_cpts: list
-        List of dictionaries containing CPT data.
+    Params:
+        data_cpts (list): List of dictionaries containing CPT data.
+        lowest_min_depth (float): The lowest minimum depth to equalize to.
 
-    lowest_min_depth: float
-        The target depth that all CPTs should match.
-
-    Returns
-    -------
-    equalized_depth_cpts: list
-        List of dictionaries with equalized depths and IC values.
+    Returns:
+        list: List of dictionaries with equalized CPT data.
     """
     equalized_depth_cpts = []
 
@@ -199,18 +201,12 @@ def compress_to_32px(equalized_cpts, method="mean"):
     Compress CPT data to 32 pixels by dividing the depth into 32 equal groups
     and aggregating IC values for each group.
 
-    Parameters
-    ----------
-    equalized_cpts: list
-        List of dictionaries containing CPT data with keys 'depth' and 'IC'.
+    Params:
+        equalized_cpts (list): List of dictionaries containing equalized CPT data.
+        method (str): Aggregation method, either "mean" or "max".
 
-    method: str
-        Aggregation method for compression ('mean' or 'max').
-
-    Returns
-    -------
-    compressed_cpts: list
-        List of dictionaries with compressed CPT data (32 depth and IC values).
+    Returns:
+        list: List of dictionaries with compressed CPT data (32 depth and IC values).
     """
     if method not in ["mean", "max"]:
         raise ValueError("Invalid method. Use 'mean' or 'max'.")
@@ -271,16 +267,12 @@ def save_cpt_to_csv(data_cpts: list, output_dir: str):
     The CSV will have 33 rows: one for depth indices (0 to 31) and 32 depth bins,
     and one for each CPT with IC values.
 
-    Parameters
-    ----------
-    data_cpts: list
-        List of dictionaries containing compressed CPT data (32 depth and IC values).
-    output_dir: str
-        Directory where the CSV file will be saved.
+    Params:
+        data_cpts (list): List of dictionaries containing compressed CPT data.
+        output_dir (str): Directory where the CSV file will be saved.
 
-    Returns
-    -------
-    None
+    Returns:
+        None
     """
     # Ensure the output directory exists
     os.makedirs(output_dir, exist_ok=True)
@@ -317,16 +309,16 @@ def plot_equalized_depth_cpts(
     Plot individual CPTs before and after equalization in a 3-row, 10-column layout.
     Depth is plotted on the y-axis, IC on the x-axis, with a dotted line indicating the lowest min depth and max depth.
 
-    Parameters
-    ----------
-    data_cpts_original: list
-        List of CPT data dictionaries before equalization.
-    data_cpts_modified: list
-        List of CPT data dictionaries after equalizing to the lowest max depth.
-    data_cpts_32px: list
-        List of CPT data dictionaries after equalizing to the lowest min depth.
-    num_to_plot: int
-        Number of CPTs to plot (default is 10).
+    Params:
+        data_cpts_original (list): List of dictionaries containing original CPT data.
+        data_cpts_modified (list): List of dictionaries containing equalized CPT data.
+        data_cpts_32px (list): List of dictionaries containing compressed CPT data.
+        num_to_plot (int): Number of CPTs to plot (default is 10).
+        lowest_min_depth (float): The lowest minimum depth across all CPTs.
+        lowest_max_depth (float): The lowest maximum depth across all CPTs.
+
+    Returns:
+        None
     """
     # Limit to the specified number of CPTs
     data_cpts_original = data_cpts_original[:num_to_plot]
@@ -404,16 +396,13 @@ def plot_compression_results(equalized_cpts, compressed_cpts, num_to_plot=10):
     """
     Plot the results of compression for comparison in a 3-row layout.
 
-    Parameters
-    ----------
-    equalized_cpts: list
-        List of dictionaries containing original equalized CPT data.
+    Params:
+        equalized_cpts (list): List of dictionaries containing equalized CPT data.
+        compressed_cpts (list): List of dictionaries containing compressed CPT data.
+        num_to_plot (int): Number of CPTs to plot (default is 10).
 
-    compressed_cpts: list
-        List of dictionaries containing compressed CPT data.
-
-    num_to_plot: int
-        Number of CPTs to plot (default is 10).
+    Returns:
+        None
     """
     # Calculate the number of columns and rows
     rows = 3
