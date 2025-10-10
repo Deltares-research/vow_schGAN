@@ -260,7 +260,7 @@ def compress_to_32px(equalized_cpts, method="mean"):
     return compressed_cpts
 
 
-def save_cpt_to_csv(data_cpts: list, output_dir: str):
+def save_cpt_to_csv(data_cpts: list, output_folder: str, output_name: str):
     """
     Save the compressed CPT data (32 pixels) to a CSV file.
 
@@ -269,13 +269,14 @@ def save_cpt_to_csv(data_cpts: list, output_dir: str):
 
     Params:
         data_cpts (list): List of dictionaries containing compressed CPT data.
-        output_dir (str): Directory where the CSV file will be saved.
+        output_folder (str): Directory where the CSV file will be saved.
+        output_name (str): Name of the output CSV file.
 
     Returns:
         None
     """
     # Ensure the output directory exists
-    os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(output_folder, exist_ok=True)
 
     # Initialize a DataFrame for storing depth and IC data
     df = pd.DataFrame()
@@ -290,7 +291,7 @@ def save_cpt_to_csv(data_cpts: list, output_dir: str):
         df[cpt_name] = cpt["IC"][::-1]
 
     # Define the output file path
-    output_file = os.path.join(output_dir, "compressed_cpt_data.csv")
+    output_file = os.path.join(output_folder, output_name)
 
     # Save the DataFrame to CSV
     df.to_csv(output_file, index=False)
@@ -454,7 +455,8 @@ def plot_compression_results(equalized_cpts, compressed_cpts, num_to_plot=10):
 if __name__ == "__main__":
     #### USER INPUT ####
     CPT_FOLDER = Path(r"C:\VOW\data\betuwepand\dike_north")
-    OUT_PATH = Path(r"C:\VOW\data\betuwepand\dike_north")
+    OUT_FOLDER = Path(r"C:\VOW\data\schgan_inputs")
+    OUT_NAME = "dike_north_input.csv"
     ####################
 
     # Directory containing the CPT files
@@ -474,15 +476,15 @@ if __name__ == "__main__":
     lowest_max_depth = min(cpt["depth_max"] for cpt in data_cpts)
     lowest_min_depth = min(cpt["depth_min"] for cpt in data_cpts)
 
+    # Print the results
+    print(f"The lowest maximum depth is: {lowest_max_depth}")
+    print(f"The lowest minimum depth is: {lowest_min_depth}")
+
     # Equalize depths to match the lowest_max_depth (equalized top)
     equalized_top_cpts = equalize_top(original_data_cpts)
 
     # Now extend depths to match the lowest_min_depth (equalized bottom)
     equalized_depth_cpts = equalize_depth(equalized_top_cpts, lowest_min_depth)
-
-    # Print the results
-    print(f"The lowest maximum depth is: {lowest_max_depth}")
-    print(f"The lowest minimum depth is: {lowest_min_depth}")
 
     # Compress data to 32 points
     compressed_cpts = compress_to_32px(equalized_depth_cpts, method="mean")
@@ -501,5 +503,4 @@ if __name__ == "__main__":
     plot_compression_results(equalized_depth_cpts, compressed_cpts, num_to_plot=36)
 
     # Save the compressed data to a CSV file
-    output_dir = OUT_PATH
-    save_cpt_to_csv(compressed_cpts, output_dir)
+    save_cpt_to_csv(compressed_cpts, OUT_FOLDER, OUT_NAME)

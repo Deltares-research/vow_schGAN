@@ -145,7 +145,7 @@ def save_coordinates_to_csv(rows, output_csv: Path):
         writer.writerow(["name", "x", "y", "fixed"])
         writer.writerows(rows)
 
-    print(f"✅ Coordinates saved to: {output_csv}")
+    print(f"Coordinates saved to: {output_csv}")
 
 
 # Main process
