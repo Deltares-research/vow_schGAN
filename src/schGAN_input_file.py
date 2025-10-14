@@ -472,8 +472,10 @@ def process_sections(
 # -----------------------------
 if __name__ == "__main__":
     # ----- CONFIG -----
-    COORDS_CSV = Path(r"D:\codes\vow_schGAN\data\processed\cpt_coords_fixed.csv")
-    CPT_DATA_CSV = Path(r"C:\VOW\data\schgan_inputs")
+    COORDS_CSV = Path(r"C:\VOW\gis\coords\betuwepand_dike_south.csv")
+    CPT_DATA_CSV = Path(
+        r"C:\VOW\data\schgan_inputs\testtestest\test_dike_south_input_new.csv"
+    )
     OUT_DIR = Path(r"C:\VOW\data\test_outputs")
 
     N_COLS = 512

@@ -460,9 +460,9 @@ def plot_compression_results(equalized_cpts, compressed_cpts, num_to_plot=10):
 
 if __name__ == "__main__":
     #### USER INPUT ####
-    CPT_FOLDER = Path(r"C:\VOW\data\cpts\betuwepand\dike_south_BRO")
+    CPT_FOLDER = Path(r"C:\VOW\data\cpts\betuwepand\dike_north_BRO")
     OUT_FOLDER = Path(r"C:\VOW\data\schgan_inputs\testtestest")
-    OUT_NAME = "test_dike_south_input_new.csv"
+    OUT_NAME = "test_dike_north_input_new.csv"
     ####################
 
     # Directory containing the CPT files
@@ -506,7 +506,9 @@ if __name__ == "__main__":
     )
 
     # Plot the results of compression
-    plot_compression_results(equalized_depth_cpts, compressed_cpts, num_to_plot=len(compressed_cpts))
+    plot_compression_results(
+        equalized_depth_cpts, compressed_cpts, num_to_plot=len(compressed_cpts)
+    )
 
     # Save the compressed data to a CSV file
     save_cpt_to_csv(compressed_cpts, OUT_FOLDER, OUT_NAME)
