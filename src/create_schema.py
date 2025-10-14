@@ -1,3 +1,9 @@
+import os
+
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = (
+    "2"  # 0=all, 1=filter INFO, 2=+filter WARNING, 3=+filter ERROR
+)
+
 import re
 import sys
 import numpy as np
@@ -5,13 +11,19 @@ import pandas as pd
 from pathlib import Path
 import matplotlib.pyplot as plt
 from tensorflow.keras.models import load_model
+import logging, warnings
 import tensorflow as tf
+from absl import logging as absl_logging
 
-# Add your local SchemaGAN path
-sys.path.append(r"D:\schemaGAN")
+tf.get_logger().setLevel(logging.ERROR)  # silence TF python-side INFO/WARNING
+absl_logging.set_verbosity(absl_logging.ERROR)
+warnings.filterwarnings("ignore", category=UserWarning, module="tensorflow")
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="tensorflow")
+tf.autograph.set_verbosity(0)
+
 
 # Utils
-from schemaGAN.functions.utils import IC_normalization, reverse_IC_normalization
+from utils import IC_normalization, reverse_IC_normalization
 
 # -------------------
 # CONFIG
@@ -58,7 +70,7 @@ print(f"[INFO] Using seed: {seed}")
 # LOAD MODEL + METADATA
 # -------------------
 print("[INFO] Loading model…")
-model = load_model(PATH_TO_MODEL)
+model = load_model(PATH_TO_MODEL, compile=False)
 
 # Load manifest and coords once
 man = pd.read_csv(MANIFEST_CSV)

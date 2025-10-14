@@ -139,3 +139,62 @@ def save_coords_csv(data, output_file, show_plot=False):
 
 def euclid(x1: float, y1: float, x2: float, y2: float) -> float:
     return float(math.hypot(x2 - x1, y2 - y1))
+
+
+def IC_normalization(data):
+    """
+    Normalize IC values in the data from [0 - MaxIC] to [-1 - 1].
+
+    Parameters:
+    data (list): List containing the source and target data.
+
+    Returns:
+    list: A list containing the normalized source and target data.
+    """
+    # print('Normalizing the IC data...')
+
+    # Define the maximum and minimum values of IC in the source and target images
+    max_IC_value = 4.3  # Maximum expected IC value
+    min_IC_value = 0  # Minimum expected IC value, it's not really zero,
+    # but when deleting data it will be zero
+
+    # Unpack the data, where data[0] is source data and data[1] is target data
+    src_data, tar_data = data
+
+    # Calculate the range of the data
+    data_range = max_IC_value - min_IC_value
+
+    # Scale the source and target data to the range [-1, 1]
+    # Formula used for normalization is:
+    # normalized_data = 2 * (original_data / data_range) - 1
+    src_normalized = 2 * (src_data / data_range) - 1
+    tar_normalized = 2 * (tar_data / data_range) - 1
+
+    return [src_normalized, tar_normalized]
+
+
+def reverse_IC_normalization(data):
+    """
+    Reverse the normalization of IC values in the data from [-1 - 1] to [0 - MaxIC].
+
+    Parameters:
+    data (np.array): Array containing the normalized data.
+
+    Returns:
+    np.array: An array containing the rescaled data.
+    """
+
+    # Define the maximum and minimum values of IC in the source and target images
+    max_IC_value = 4.3  # Maximum expected IC value
+    min_IC_value = 0  # Minimum expected IC value, it's not really zero,
+    # but when deleting data it will be zero
+
+    # Calculate the range of the data
+    data_range = max_IC_value - min_IC_value
+
+    # Rescale the data to the original range [min_IC_value, max_IC_value]
+    # Formula used for rescaling is:
+    # rescaled_data = (normalized_data + 1) * (data_range / 2) + min_IC_value
+    X = (data + 1) * (data_range / 2) + min_IC_value
+
+    return X
