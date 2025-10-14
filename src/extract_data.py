@@ -1,5 +1,6 @@
 # This code makes the 32 px CPT csv file. All CPTs together. This does NOT make the sections filled with zeros.
 
+import sys
 import os
 import math
 import logging
@@ -9,6 +10,9 @@ import numpy as np
 
 from utils import read_files
 from pathlib import Path
+
+# Add your local GEOLib-Plus path
+sys.path.append(r"D:\GEOLib-Plus")
 
 from geolib_plus.gef_cpt import GefCpt
 from geolib_plus.robertson_cpt_interpretation import RobertsonCptInterpretation
@@ -47,7 +51,7 @@ def process_cpts(gef_list: list[Path]):
         cpt_gef.pre_process_data()
 
         interpreter = RobertsonCptInterpretation()
-        interpreter.interpretation_method = InterpretationMethod.ROBERTSON
+        # interpreter.interpretation_method = InterpretationMethod.ROBERTSON
         interpreter.unitweightmethod = UnitWeightMethod.ROBERTSON
         interpreter.user_defined_water_level = True
         cpt_gef.pwp = 0
@@ -456,9 +460,9 @@ def plot_compression_results(equalized_cpts, compressed_cpts, num_to_plot=10):
 
 if __name__ == "__main__":
     #### USER INPUT ####
-    CPT_FOLDER = Path(r"C:\VOW\data\betuwepand\dike_north")
-    OUT_FOLDER = Path(r"C:\VOW\data\schgan_inputs")
-    OUT_NAME = "dike_north_input.csv"
+    CPT_FOLDER = Path(r"C:\VOW\data\cpts\betuwepand\dike_south_BRO")
+    OUT_FOLDER = Path(r"C:\VOW\data\schgan_inputs\testtestest")
+    OUT_NAME = "test_dike_south_input_new.csv"
     ####################
 
     # Directory containing the CPT files
@@ -502,7 +506,7 @@ if __name__ == "__main__":
     )
 
     # Plot the results of compression
-    plot_compression_results(equalized_depth_cpts, compressed_cpts, num_to_plot=36)
+    plot_compression_results(equalized_depth_cpts, compressed_cpts, num_to_plot=len(compressed_cpts))
 
     # Save the compressed data to a CSV file
     save_cpt_to_csv(compressed_cpts, OUT_FOLDER, OUT_NAME)
