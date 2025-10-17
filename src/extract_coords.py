@@ -163,7 +163,7 @@ def process_cpt_coords(cpt_folder: Path, output_csv: Path) -> None:
         None
     """
     all_files = read_files(str(cpt_folder), extension=".gef")
-    print(f"Processing {len(all_files)} files for coordinates...")
+    # print(f"Processing {len(all_files)} files for coordinates...")
 
     sucess_count = 0
     fail_count = 0
@@ -216,7 +216,7 @@ def process_cpt_coords(cpt_folder: Path, output_csv: Path) -> None:
     save_coordinates_to_csv(rows, output_csv)
 
     # Step 5: Print summary
-    print("Coordinate check completed.")
+    # print("Coordinate check completed.")
     print(f"Files with valid coordinates: {sucess_count}")
     print(f"Files moved to 'no_coords':   {fail_count}")
     print(f"Files written to CSV:         {len(rows)}")
