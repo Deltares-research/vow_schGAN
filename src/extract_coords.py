@@ -228,9 +228,8 @@ def process_cpt_coords(cpt_folder: Path, output_csv: Path) -> None:
 if __name__ == "__main__":
     ### PATHS AND SETTINGS ##################################################
     GEF_FOLDER = Path(r"C:\VOW\data\test_cpts")
-    OUT_FOLDER = Path(r"C:\VOW\res")
-    RUN_NAME = ""
+    OUT_CSV = Path(r"C:\VOW\res\coordinates_cpts_test_result.csv")
 
     # OUTPUT_CSV = Path(r"C:\VOW\data\test_outputs\coordinates_cpts_test_result.csv")
     #########################################################################
-    process_cpt_coords(GEF_FOLDER, OUTPUT_CSV)
+    process_cpt_coords(GEF_FOLDER, OUT_CSV)
