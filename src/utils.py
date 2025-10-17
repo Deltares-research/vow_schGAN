@@ -3,6 +3,7 @@ import os
 import math
 from pathlib import Path
 
+
 # Add your local GEOLib-Plus path
 sys.path.append(r"D:\GEOLib-Plus")
 
@@ -198,3 +199,62 @@ def reverse_IC_normalization(data):
     X = (data + 1) * (data_range / 2) + min_IC_value
 
     return X
+
+
+def setup_experiment(
+    base_dir: Path, region: str, exp_name: str, description: str = ""
+) -> dict:
+    """
+    Create a standard folder structure for a SchemaGAN experiment.
+
+    Example structure:
+    res/
+      north/
+        exp_1/
+          1_coords/
+          2_compressed_cpt/
+          3_sections/
+          4_gan_images/
+          5_mosaic/
+          README.txt
+
+    Args:
+        base_dir (Path): Base directory for all results (e.g., Path('C:/VOW/res'))
+        region (str): Region name ('north', 'south', etc.)
+        exp_name (str): Experiment name ('exp_1', 'exp_2', etc.)
+        description (str): Optional short text describing the experiment
+    Returns:
+        dict: Dictionary with all created folder paths
+    """
+
+    # Root for this experiment
+    exp_root = base_dir / region / exp_name
+    exp_root.mkdir(parents=True, exist_ok=True)
+
+    # Define subfolders
+    subfolders = [
+        "1_coords",
+        "2_compressed_cpt",
+        "3_sections",
+        "4_gan_images",
+        "5_mosaic",
+    ]
+
+    # Create subfolders
+    paths = {}
+    for name in subfolders:
+        path = exp_root / name
+        path.mkdir(exist_ok=True)
+        paths[name] = path
+
+    # Create or overwrite README.txt with experiment description
+    readme_path = exp_root / "README.txt"
+    with open(readme_path, "w", encoding="utf-8") as f:
+        f.write(f"Experiment: {exp_name}\n")
+        f.write(f"Region: {region}\n\n")
+        if description:
+            f.write("Description:\n")
+            f.write(description.strip() + "\n")
+
+    print(f"[INFO] Created folder structure for {region}/{exp_name}")
+    return {"root": exp_root, **paths}
