@@ -28,7 +28,15 @@ logger = None
 
 
 def trace(message: str, level: int = logging.INFO):
-    """Emit a verbose message (defaults INFO) if VERBOSE is enabled."""
+    """Emit a verbose message if VERBOSE mode is enabled.
+    
+    Args:
+        message: The log message to emit.
+        level: Logging level (default: logging.INFO). Can be INFO, DEBUG, WARNING, ERROR.
+        
+    Note:
+        Messages are only emitted when the global VERBOSE flag is True.
+    """
     if VERBOSE:
         logger.log(level, message)
 
@@ -70,7 +78,23 @@ Y_BOTTOM_M: Optional[float] = None
 
 
 def run_coordinate_extraction(cpt_folder: Path, coords_csv: Path):
-    """Wrapper for extract_coords.py functionality."""
+    """Extract and validate CPT coordinates from GEF files.
+    
+    This function processes all .gef files in the specified folder, validates their
+    coordinates, and exports them to a CSV file. Invalid files are moved to a 'no_coords'
+    subfolder.
+    
+    Args:
+        cpt_folder: Path to folder containing .gef CPT files.
+        coords_csv: Output path for the coordinates CSV file.
+        
+    Raises:
+        FileNotFoundError: If the CPT folder does not exist.
+        
+    Note:
+        Coordinates are validated for Netherlands RD system (6-digit format).
+        Auto-corrects common scaling errors (e.g., 123.456 → 123456.000).
+    """
     from extract_coords import process_cpt_coords
 
     if not cpt_folder.exists():
@@ -84,7 +108,29 @@ def run_coordinate_extraction(cpt_folder: Path, coords_csv: Path):
 def run_cpt_data_processing(
     cpt_folder: Path, output_folder: Path, compression_method: str = "mean"
 ):
-    """Wrapper for extract_data.py functionality."""
+    """Process, interpret, and compress CPT data to 32-pixel depth profiles.
+    
+    This function reads GEF files, performs Robertson CPT interpretation to calculate
+    soil behavior index (IC), equalizes depth ranges across all CPTs, and compresses
+    the data to a standardized 32-row format suitable for SchemaGAN input.
+    
+    Args:
+        cpt_folder: Path to folder containing .gef CPT files.
+        output_folder: Path where compressed CPT data will be saved.
+        compression_method: Method for aggregating IC values ("mean" or "max").
+            - "mean": Average IC value in each depth bin (smoother profiles)
+            - "max": Maximum IC value in each depth bin (preserves extremes)
+            
+    Returns:
+        tuple: (output_path, lowest_max_depth, lowest_min_depth)
+            - output_path: Path to saved compressed CSV file
+            - lowest_max_depth: Shallowest starting depth across all CPTs (meters)
+            - lowest_min_depth: Deepest ending depth across all CPTs (meters)
+            
+    Note:
+        Output CSV has columns: Depth_Index (0-31), CPT1, CPT2, ...
+        Each CPT column contains IC values at corresponding depth levels.
+    """
     from extract_data import (
         process_cpts,
         equalize_top,
@@ -137,7 +183,34 @@ def run_section_creation(
     dir_from: str,
     dir_to: str,
 ):
-    """Wrapper for create_schGAN_input_file.py functionality."""
+    """Create spatial sections with overlapping CPTs for SchemaGAN input.
+    
+    This function sorts CPTs spatially, divides them into overlapping sections,
+    and generates input matrices (n_rows × n_cols) where CPT data is positioned
+    at correct spatial locations with padding. Areas without data are filled with zeros.
+    
+    Args:
+        coords_csv: Path to CSV file with CPT coordinates (columns: name, x, y).
+        cpt_csv: Path to compressed CPT data CSV (columns: Depth_Index, CPT names...).
+        output_folder: Directory where section files will be saved.
+        n_cols: Number of columns (width) in each section matrix.
+        n_rows: Number of rows (depth levels) in each section matrix.
+        cpts_per_section: Number of CPTs to include in each section.
+        overlap: Number of CPTs that overlap between consecutive sections.
+        left_pad: Left padding as fraction of section span (e.g., 0.10 = 10%).
+        right_pad: Right padding as fraction of section span (e.g., 0.10 = 10%).
+        dir_from: Starting direction ("west", "east", "north", or "south").
+        dir_to: Ending direction ("west", "east", "north", or "south").
+        
+    Returns:
+        list: Manifest list of dictionaries, each containing section metadata:
+            - section_index: Section number
+            - start_idx, end_idx: CPT indices in this section
+            - span_m: Real-world distance between first and last CPT
+            - left_pad_m, right_pad_m: Padding distances in meters
+            - csv_path: Path to section CSV file
+            
+    """
     from create_schGAN_input_file import (
         process_sections,
         write_manifest,
@@ -180,7 +253,33 @@ def run_schema_generation(
     y_top_m: float,
     y_bottom_m: float,
 ):
-    """Generate schemas using SchemaGAN model - reimplemented to avoid import issues."""
+    """Generate detailed subsurface schemas using trained SchemaGAN model.
+    
+    This function loads section CSV files (sparse IC data with zeros), feeds them
+    through the trained SchemaGAN generator network, and produces detailed subsurface
+    schemas as both CSV data and PNG visualizations with proper coordinate axes.
+    
+    Args:
+        sections_folder: Path to folder containing section CSV files and manifest.
+        gan_images_folder: Output folder for generated schema images and data.
+        model_path: Path to trained SchemaGAN model file (.h5).
+        y_top_m: Top depth in meters (e.g., 6.8 for 6.8m below surface).
+        y_bottom_m: Bottom depth in meters (e.g., -13.1 for 13.1m below surface).
+        
+    Returns:
+        tuple: (success_count, fail_count)
+            - success_count: Number of sections successfully processed
+            - fail_count: Number of sections that failed processing
+            
+    Note:
+        For each section, generates:
+        - CSV file: Raw schema data (N_ROWS × N_COLS matrix of IC values)
+        - PNG file: Visualization with 4 axes:
+            * Bottom: Distance along line (meters)
+            * Top: Pixel index (0 to N_COLS-1)
+            * Left: Depth index (0 to N_ROWS-1)
+            * Right: Real depth (meters)
+    """
 
     # Ensure output directory exists
     gan_images_folder.mkdir(parents=True, exist_ok=True)
@@ -222,7 +321,7 @@ def run_schema_generation(
     manifest_df = pd.read_csv(manifest_csv)
     coords_df = pd.read_csv(coords_csv)
 
-    # Constants
+    # Use configured grid size
     SIZE_X, SIZE_Y = N_COLS, N_ROWS
 
     success_count = 0
@@ -351,7 +450,31 @@ def run_mosaic_creation(
     y_top_m: float,
     y_bottom_m: float,
 ):
-    """Create mosaic from generated schemas."""
+    """Combine all generated schema sections into a seamless mosaic.
+    
+    This function assembles individual schema sections into a complete subsurface
+    visualization by interpolating overlapping regions and aligning them on a
+    global coordinate grid. Produces both a CSV data file and PNG visualization.
+    
+    Args:
+        sections_folder: Path to folder containing section manifest and coordinates.
+        gan_images_folder: Path to folder with generated schema CSV files (*_gan.csv).
+        mosaic_folder: Output folder for mosaic files.
+        y_top_m: Top depth in meters for visualization axis.
+        y_bottom_m: Bottom depth in meters for visualization axis.
+        
+    Raises:
+        RuntimeError: If no valid GAN CSV files are found.
+        
+    Note:
+        The mosaic uses bilinear interpolation to blend overlapping sections smoothly.
+        Output files:
+        - schemaGAN_mosaic.csv: Complete mosaic data matrix
+        - schemaGAN_mosaic.png: Visualization with distance and depth axes
+        
+        The global grid resolution (dx) is computed as the median pixel size
+        across all sections to maintain consistent spatial scale.
+    """
 
     # Ensure output directory exists
     mosaic_folder.mkdir(parents=True, exist_ok=True)
@@ -396,8 +519,8 @@ def run_mosaic_creation(
     import matplotlib.pyplot as plt
     import re
 
-    N_COLS = N_COLS
-    N_ROWS = N_ROWS
+    # Use configured grid size from module-level constants
+    # N_COLS and N_ROWS are already defined in CONFIG section
     GLOBAL_DX = None
     TOP_AXIS_0_TO_32 = False
 
@@ -409,6 +532,14 @@ def run_mosaic_creation(
     coords = pd.read_csv(coords_csv)
 
     def find_latest_gan_csv(section_index):
+        """Find the most recent GAN CSV file for a given section.
+        
+        Args:
+            section_index: Section number to search for.
+            
+        Returns:
+            Path or None: Path to matching GAN CSV file, or None if not found.
+        """
         # Correct pattern: filenames created as section_01_cpts_XXX_to_YYY_seedNNNN_gan.csv (02d padding)
         pattern = f"section_{section_index:02d}_cpts_*_gan.csv"
         matches = list(gan_images_folder.glob(pattern))
@@ -427,6 +558,18 @@ def run_mosaic_creation(
             return None
 
     def compute_section_placement(row, coords):
+        """Calculate real-world coordinates and pixel resolution for a section.
+        
+        Args:
+            row: Manifest row (pandas Series) containing section metadata.
+            coords: DataFrame with CPT coordinates and cumulative distances.
+            
+        Returns:
+            tuple: (x0, dx, x1)
+                - x0: Leftmost coordinate in meters (including left padding)
+                - dx: Meters per pixel
+                - x1: Rightmost coordinate in meters
+        """
         total_span = float(row["span_m"] + row["left_pad_m"] + row["right_pad_m"])
         start_idx = int(row["start_idx"])
         m0 = float(coords.loc[start_idx, "cum_along_m"])
@@ -439,6 +582,18 @@ def run_mosaic_creation(
         return x0, dx, x1
 
     def choose_global_grid(manifest):
+        """Determine global mosaic grid parameters from all sections.
+        
+        Args:
+            manifest: DataFrame with section placement data (columns: x0, x1, dx).
+            
+        Returns:
+            tuple: (xmin, xmax, dx, width)
+                - xmin: Leftmost coordinate across all sections
+                - xmax: Rightmost coordinate across all sections
+                - dx: Global pixel size (median of all section dx values)
+                - width: Total number of columns in mosaic
+        """
         xmin = float(manifest["x0"].min())
         xmax = float(manifest["x1"].max())
         dx = GLOBAL_DX if GLOBAL_DX is not None else float(np.median(manifest["dx"]))
@@ -449,6 +604,24 @@ def run_mosaic_creation(
         return xmin, xmax, dx, width
 
     def add_section_to_accumulator(acc, wts, section_csv, x0, dx, xmin, global_dx):
+        """Add a section to the mosaic accumulator using bilinear interpolation.
+        
+        Maps section pixels to global grid coordinates and accumulates weighted
+        values to handle overlapping sections smoothly.
+        
+        Args:
+            acc: Accumulator array (N_ROWS x width) for summing weighted values.
+            wts: Weights array (width,) for tracking contribution per column.
+            section_csv: Path to section CSV file.
+            x0: Section's leftmost coordinate (meters).
+            dx: Section's pixel size (meters per pixel).
+            xmin: Global grid's leftmost coordinate.
+            global_dx: Global grid's pixel size.
+            
+        Note:
+            Uses bilinear interpolation: each section pixel contributes to
+            two adjacent global grid columns based on fractional position.
+        """
         logger.info(f"[INFO] Adding section to accumulator: {section_csv}")
         arr = pd.read_csv(section_csv).to_numpy(dtype=float)
         if arr.shape != (N_ROWS, N_COLS):
@@ -486,6 +659,22 @@ def run_mosaic_creation(
             wts[k1v[in_range]] += f1[in_range]
 
     def build_mosaic(manifest, coords):
+        """Assemble all sections into a complete mosaic.
+        
+        Args:
+            manifest: DataFrame with section metadata.
+            coords: DataFrame with CPT coordinates and distances.
+            
+        Returns:
+            tuple: (mosaic, xmin, xmax, global_dx)
+                - mosaic: Assembled mosaic array (N_ROWS × width)
+                - xmin: Leftmost coordinate
+                - xmax: Rightmost coordinate
+                - global_dx: Pixel size used in mosaic
+                
+        Raises:
+            RuntimeError: If no sections with GAN CSVs are found.
+        """
         logger.info("[INFO] Building mosaic from sections...")
         trace(f"Mosaic build: initial manifest size={len(manifest)}")
         manifest = manifest.copy()
@@ -556,6 +745,22 @@ def run_mosaic_creation(
         return mosaic, xmin, xmax, global_dx
 
     def plot_mosaic(mosaic, xmin, xmax, global_dx, out_png):
+        """Create and save mosaic visualization with coordinate axes.
+        
+        Args:
+            mosaic: Mosaic data array (N_ROWS x width).
+            xmin: Leftmost coordinate in meters.
+            xmax: Rightmost coordinate in meters.
+            global_dx: Pixel size in meters per pixel.
+            out_png: Output path for PNG file.
+            
+        Note:
+            Creates visualization with 4 axes:
+            - Bottom: Distance along line (meters)
+            - Top: Pixel index
+            - Left: Depth index (0 to N_ROWS-1)
+            - Right: Real depth (meters, computed from y_top_m and y_bottom_m)
+        """
         logger.info(f"[INFO] Plotting mosaic to PNG: {out_png}")
         horiz_m = xmax - xmin
         vert_m = abs(y_bottom_m - y_top_m)
@@ -616,7 +821,30 @@ def run_mosaic_creation(
 
 
 def main():
-    """Execute the complete VOW SchemaGAN pipeline."""
+    """Execute the complete VOW SchemaGAN pipeline.
+    
+    Orchestrates all six steps of the workflow:
+    1. Creates experiment folder structure
+    2. Extracts and validates CPT coordinates from GEF files
+    3. Processes CPT data and compresses to 32-pixel depth profiles
+    4. Creates spatial sections with overlapping CPTs
+    5. Generates detailed schemas using SchemaGAN model
+    6. Assembles all sections into a seamless mosaic
+    
+    All configuration is taken from module-level CONFIG constants.
+    Results are saved in: {RES_DIR}/{REGION}/{EXP_NAME}/
+    
+    Logging:
+        - Console: All INFO and higher messages
+        - File: Complete log saved to {experiment_folder}/pipeline.log
+        
+    Returns:
+        None. Exits early if any critical step fails.
+        
+    Note:
+        Depth range (y_top_m, y_bottom_m) is auto-computed from CPT data
+        if not explicitly set in CONFIG section.
+    """
 
     global logger
 
@@ -641,13 +869,6 @@ def main():
             logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
         )
         logger.addHandler(file_handler)
-
-        # Also add console handler to ensure we see output
-        console_handler = logging.StreamHandler()
-        console_handler.setFormatter(
-            logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
-        )
-        logger.addHandler(console_handler)
 
         logger.info(f"Logging to file: {LOG_FILE.resolve()}")
     except Exception as _e:
