@@ -53,8 +53,8 @@ from utils import setup_experiment
 # Base configuration
 RES_DIR = Path(r"C:\VOW\res")
 REGION = "south"
-EXP_NAME = "exp_3"
-DESCRIPTION = "Baseline with 6 CPTs and 2 overlapping"
+EXP_NAME = "exp_7"
+DESCRIPTION = "CPT compression to 320, 2 CPT overlap, 50% vertical overlap."
 
 # Input data paths
 CPT_FOLDER = Path(r"C:\VOW\data\cpts\betuwepand\dike_south_BRO")
@@ -74,7 +74,13 @@ N_ROWS = 32  # Number of rows in sections (SchemaGAN expects 32)
 # If CPT_DEPTH_PIXELS != N_ROWS, resampling will occur in section creation
 
 CPTS_PER_SECTION = 6  # Number of CPTs per section
-OVERLAP_CPTS = 2  # Number of overlapping CPTs between sections
+OVERLAP_CPTS = 2  # Number of overlapping CPTs between sections (horizontal)
+
+# Vertical windowing parameters
+VERTICAL_OVERLAP = 50  # [%] Vertical overlap between depth windows (0.0 = no overlap, 50.0 = 50% overlap)
+# Only used if CPT_DEPTH_PIXELS > N_ROWS
+# Example: With 128px CPT data and 32px windows, 0% overlap = 4 windows, 50% overlap = 7 windows
+
 LEFT_PAD_FRACTION = 0.10  # Left padding as fraction of section span
 RIGHT_PAD_FRACTION = 0.10  # Right padding as fraction of section span
 DIR_FROM, DIR_TO = "west", "east"  # Sorting direction
@@ -203,32 +209,42 @@ def run_section_creation(
     right_pad: float,
     dir_from: str,
     dir_to: str,
+    vertical_overlap: float = 0.0,
 ):
     """Create spatial sections with overlapping CPTs for SchemaGAN input.
 
-    This function sorts CPTs spatially, divides them into overlapping sections,
-    and generates input matrices (n_rows x n_cols) where CPT data is positioned
-    at correct spatial locations with padding. Areas without data are filled with zeros.
+    This function sorts CPTs spatially, divides them into overlapping sections both
+    horizontally (by CPT count) and vertically (by depth windows), and generates input
+    matrices (n_rows x n_cols) where CPT data is positioned at correct spatial locations
+    with padding. Areas without data are filled with zeros.
+
+    If CPT data has more rows than n_rows, it will be split into vertical windows
+    (e.g., 128px compressed data → 4 windows of 32px each).
 
     Args:
         coords_csv: Path to CSV file with CPT coordinates (columns: name, x, y).
         cpt_csv: Path to compressed CPT data CSV (columns: Depth_Index, CPT names...).
         output_folder: Directory where section files will be saved.
         n_cols: Number of columns (width) in each section matrix.
-        n_rows: Number of rows (depth levels) in each section matrix.
+        n_rows: Number of rows (depth levels) in each section matrix (SchemaGAN expects 32).
         cpts_per_section: Number of CPTs to include in each section.
         overlap: Number of CPTs that overlap between consecutive sections.
         left_pad: Left padding as fraction of section span (e.g., 0.10 = 10%).
         right_pad: Right padding as fraction of section span (e.g., 0.10 = 10%).
         dir_from: Starting direction ("west", "east", "north", or "south").
         dir_to: Ending direction ("west", "east", "north", or "south").
+        vertical_overlap: Vertical overlap percentage between depth windows (0.0 to 99.0).
+                         Only applies if CPT data rows > n_rows.
 
     Returns:
-        list: Manifest list of dictionaries, each containing section metadata:
+        list: Combined manifest list of dictionaries for all depth windows, each containing:
             - section_index: Section number
             - start_idx, end_idx: CPT indices in this section
             - span_m: Real-world distance between first and last CPT
             - left_pad_m, right_pad_m: Padding distances in meters
+            - depth_window: Depth window index (0, 1, 2, ...)
+            - depth_start_row: Starting row in original CPT data
+            - depth_end_row: Ending row in original CPT data
             - csv_path: Path to section CSV file
 
     """
@@ -236,32 +252,104 @@ def run_section_creation(
         process_sections,
         write_manifest,
         validate_input_files,
+        split_cpt_into_windows,
     )
     import pandas as pd
+    import numpy as np
 
     # Load data
     coords_df = pd.read_csv(coords_csv)
-    cpt_df = pd.read_csv(cpt_csv)
+    cpt_df_full = pd.read_csv(cpt_csv)
 
-    # Validate and process
-    validate_input_files(coords_df, cpt_df, n_rows)
+    # Determine if we need vertical windowing
+    total_cpt_rows = len(cpt_df_full)
 
-    manifest = process_sections(
-        coords_df=coords_df,
-        cpt_df=cpt_df,
-        out_dir=output_folder,
-        n_cols=n_cols,
-        n_rows=n_rows,
-        per=cpts_per_section,
-        overlap=overlap,
-        left_pad_frac=left_pad,
-        right_pad_frac=right_pad,
-        from_where=dir_from,
-        to_where=dir_to,
-    )
+    if total_cpt_rows == n_rows:
+        # No vertical windowing needed - process as single depth level
+        logger.info(
+            f"CPT data has {total_cpt_rows} rows matching n_rows={n_rows}. Processing as single depth level."
+        )
+
+        validate_input_files(coords_df, cpt_df_full, n_rows)
+
+        manifest = process_sections(
+            coords_df=coords_df,
+            cpt_df=cpt_df_full,
+            out_dir=output_folder,
+            n_cols=n_cols,
+            n_rows=n_rows,
+            per=cpts_per_section,
+            overlap=overlap,
+            left_pad_frac=left_pad,
+            right_pad_frac=right_pad,
+            from_where=dir_from,
+            to_where=dir_to,
+            depth_window=None,  # No depth windowing
+            depth_start_row=None,
+            depth_end_row=None,
+            write_distances=True,
+        )
+
+    elif total_cpt_rows > n_rows:
+        # Vertical windowing required
+        logger.info(
+            f"CPT data has {total_cpt_rows} rows > n_rows={n_rows}. "
+            f"Splitting into vertical windows with {vertical_overlap:.1f}% overlap."
+        )
+
+        # Split CPT data into vertical windows
+        depth_windows = split_cpt_into_windows(
+            cpt_df=cpt_df_full,
+            window_rows=n_rows,
+            vertical_overlap_pct=vertical_overlap,
+        )
+
+        logger.info(f"Created {len(depth_windows)} depth windows")
+
+        all_manifests = []
+
+        for w_idx, start_row, end_row, cpt_df_win in depth_windows:
+            logger.info(
+                f"Processing depth window z_{w_idx:02d} "
+                f"(rows {start_row}..{end_row-1} of original CPT data)..."
+            )
+
+            # Validate this window
+            validate_input_files(coords_df, cpt_df_win, n_rows)
+
+            # Only write distances file for first window (identical for all)
+            write_dists = w_idx == 0
+
+            manifest = process_sections(
+                coords_df=coords_df,
+                cpt_df=cpt_df_win,
+                out_dir=output_folder,
+                n_cols=n_cols,
+                n_rows=n_rows,
+                per=cpts_per_section,
+                overlap=overlap,
+                left_pad_frac=left_pad,
+                right_pad_frac=right_pad,
+                from_where=dir_from,
+                to_where=dir_to,
+                depth_window=w_idx,
+                depth_start_row=start_row,
+                depth_end_row=end_row,
+                write_distances=write_dists,
+            )
+
+            all_manifests.extend(manifest)
+
+        manifest = all_manifests
+
+    else:
+        raise ValueError(
+            f"CPT data has {total_cpt_rows} rows but n_rows={n_rows}. "
+            f"CPT data must have at least n_rows rows."
+        )
 
     write_manifest(manifest, output_folder)
-    logger.info(f"Created {len(manifest)} sections in: {output_folder}")
+    logger.info(f"Created {len(manifest)} total sections in: {output_folder}")
     logger.info("Step 4 complete.")
 
     return manifest
@@ -471,11 +559,12 @@ def run_mosaic_creation(
     y_top_m: float,
     y_bottom_m: float,
 ):
-    """Combine all generated schema sections into a seamless mosaic.
+    """Combine all generated schema sections into a seamless mosaic with vertical stacking.
 
     This function assembles individual schema sections into a complete subsurface
-    visualization by interpolating overlapping regions and aligning them on a
-    global coordinate grid. Produces both a CSV data file and PNG visualization.
+    visualization. It handles both horizontal overlaps (between adjacent sections) and
+    vertical stacking (when depth windows were used), using bilinear interpolation
+    for smooth blending.
 
     Args:
         sections_folder: Path to folder containing section manifest and coordinates.
@@ -488,14 +577,23 @@ def run_mosaic_creation(
         RuntimeError: If no valid GAN CSV files are found.
 
     Note:
-        The mosaic uses bilinear interpolation to blend overlapping sections smoothly.
+        The mosaic uses bilinear interpolation to blend overlapping sections smoothly,
+        both horizontally and vertically. If the manifest contains depth_window,
+        depth_start_row, and depth_end_row columns, vertical stacking is applied
+        based on original CPT data row indices. Otherwise, simple non-overlapping
+        vertical stacking is used.
+
         Output files:
         - schemaGAN_mosaic.csv: Complete mosaic data matrix
         - schemaGAN_mosaic.png: Visualization with distance and depth axes
-
-        The global grid resolution (dx) is computed as the median pixel size
-        across all sections to maintain consistent spatial scale.
     """
+    from create_mosaic import (
+        load_inputs,
+        find_latest_gan_csv_for_row,
+        build_mosaic,
+        plot_mosaic,
+    )
+    import pandas as pd
 
     # Ensure output directory exists
     mosaic_folder.mkdir(parents=True, exist_ok=True)
@@ -508,337 +606,132 @@ def run_mosaic_creation(
         return
 
     logger.info(f"Creating mosaic from {len(gan_files)} generated schemas...")
-    trace(f"Initial GAN CSV count for mosaic: {len(gan_files)}")
+    trace(f"GAN CSV count for mosaic: {len(gan_files)}")
 
-    # Import required modules for mosaic creation
-    logger.info("=" * 60)
-    logger.info("MOSAIC CREATION STARTING")
-    logger.info("=" * 60)
-    logger.info("[INFO] Ensuring mosaic output directory exists: %s", mosaic_folder)
-    mosaic_folder.mkdir(parents=True, exist_ok=True)
-
-    gan_files = list(gan_images_folder.glob("*_gan.csv"))
-    logger.info(
-        "[INFO] Found %d GAN CSV files in %s", len(gan_files), gan_images_folder
-    )
-    trace(f"Proceeding with {len(gan_files)} GAN CSV files for mosaic")
-
-    # List all GAN files found for debugging
-    for i, gan_file in enumerate(gan_files):
-        logger.info(f"[INFO] GAN file {i+1}: {gan_file.name}")
-
-    if not gan_files:
-        logger.warning("No generated schema files found. Skipping mosaic creation.")
-        logger.warning(f"Checked directory: {gan_images_folder}")
-        logger.warning("Expected files matching pattern: *_gan.csv")
-        return
-
-    logger.info(f"[INFO] Creating mosaic from {len(gan_files)} generated schemas...")
-
-    import numpy as np
-    import pandas as pd
-    import matplotlib.pyplot as plt
-    import re
-
-    # Use configured grid size from module-level constants
-    # N_COLS and N_ROWS are already defined in CONFIG section
-    GLOBAL_DX = None
-    TOP_AXIS_0_TO_32 = False
-
+    # Load manifest and coordinates
     manifest_csv = sections_folder / "manifest_sections.csv"
     coords_csv = sections_folder / "cpt_coords_with_distances.csv"
-    logger.info("[INFO] Loading manifest from: %s", manifest_csv)
-    logger.info("[INFO] Loading coordinates from: %s", coords_csv)
-    manifest = pd.read_csv(manifest_csv)
-    coords = pd.read_csv(coords_csv)
 
-    def find_latest_gan_csv(section_index):
-        """Find the most recent GAN CSV file for a given section.
-
-        Args:
-            section_index: Section number to search for.
-
-        Returns:
-            Path or None: Path to matching GAN CSV file, or None if not found.
-        """
-        # Correct pattern: filenames created as section_01_cpts_XXX_to_YYY_seedNNNN_gan.csv (02d padding)
-        pattern = f"section_{section_index:02d}_cpts_*_gan.csv"
-        matches = list(gan_images_folder.glob(pattern))
-        trace(
-            f"Section {section_index:02d} filename pattern '{pattern}' matches={len(matches)}"
-        )
-        if matches:
-            logger.info(
-                f"[INFO] Section {section_index:02d}: Using GAN file: {matches[-1].name}"
-            )
-            return matches[-1]
-        else:
-            logger.warning(
-                f"[WARN] Section {section_index:02d}: No GAN CSV files found for pattern '{pattern}'"
-            )
-            return None
-
-    def compute_section_placement(row, coords):
-        """Calculate real-world coordinates and pixel resolution for a section.
-
-        Args:
-            row: Manifest row (pandas Series) containing section metadata.
-            coords: DataFrame with CPT coordinates and cumulative distances.
-
-        Returns:
-            tuple: (x0, dx, x1)
-                - x0: Leftmost coordinate in meters (including left padding)
-                - dx: Meters per pixel
-                - x1: Rightmost coordinate in meters
-        """
-        total_span = float(row["span_m"] + row["left_pad_m"] + row["right_pad_m"])
-        start_idx = int(row["start_idx"])
-        m0 = float(coords.loc[start_idx, "cum_along_m"])
-        x0 = m0 - float(row["left_pad_m"])
-        dx = 1.0 if total_span <= 0 else total_span / (N_COLS - 1)
-        x1 = x0 + (N_COLS - 1) * dx
-        logger.info(
-            f"[INFO] Section {row['section_index']}: x0={x0:.2f}, dx={dx:.4f}, x1={x1:.2f}"
-        )
-        return x0, dx, x1
-
-    def choose_global_grid(manifest):
-        """Determine global mosaic grid parameters from all sections.
-
-        Args:
-            manifest: DataFrame with section placement data (columns: x0, x1, dx).
-
-        Returns:
-            tuple: (xmin, xmax, dx, width)
-                - xmin: Leftmost coordinate across all sections
-                - xmax: Rightmost coordinate across all sections
-                - dx: Global pixel size (median of all section dx values)
-                - width: Total number of columns in mosaic
-        """
-        xmin = float(manifest["x0"].min())
-        xmax = float(manifest["x1"].max())
-        dx = GLOBAL_DX if GLOBAL_DX is not None else float(np.median(manifest["dx"]))
-        width = int(round((xmax - xmin) / dx)) + 1
-        logger.info(
-            f"[INFO] Global grid: xmin={xmin:.2f}, xmax={xmax:.2f}, dx={dx:.4f}, width={width}"
-        )
-        return xmin, xmax, dx, width
-
-    def add_section_to_accumulator(acc, wts, section_csv, x0, dx, xmin, global_dx):
-        """Add a section to the mosaic accumulator using bilinear interpolation.
-
-        Maps section pixels to global grid coordinates and accumulates weighted
-        values to handle overlapping sections smoothly.
-
-        Args:
-            acc: Accumulator array (N_ROWS x width) for summing weighted values.
-            wts: Weights array (width,) for tracking contribution per column.
-            section_csv: Path to section CSV file.
-            x0: Section's leftmost coordinate (meters).
-            dx: Section's pixel size (meters per pixel).
-            xmin: Global grid's leftmost coordinate.
-            global_dx: Global grid's pixel size.
-
-        Note:
-            Uses bilinear interpolation: each section pixel contributes to
-            two adjacent global grid columns based on fractional position.
-        """
-        logger.info(f"[INFO] Adding section to accumulator: {section_csv}")
-        arr = pd.read_csv(section_csv).to_numpy(dtype=float)
-        if arr.shape != (N_ROWS, N_COLS):
-            logger.error(
-                f"[ERROR] {section_csv.name}: expected shape ({N_ROWS},{N_COLS}), got {arr.shape}"
-            )
-            raise ValueError(
-                f"{section_csv.name}: expected shape ({N_ROWS},{N_COLS}), got {arr.shape}"
-            )
-
-        xj = x0 + np.arange(N_COLS) * dx
-        pos = (xj - xmin) / global_dx
-        k0 = np.floor(pos).astype(int)
-        frac = pos - k0
-        k1 = k0 + 1
-
-        valid = (k0 >= 0) & (k0 < wts.size)
-        if not np.any(valid):
-            logger.warning(
-                f"[WARN] No valid columns in section {section_csv.name} for mosaic."
-            )
-            return
-
-        k0v = k0[valid]
-        f0 = 1.0 - frac[valid]
-        k1v = k0v + 1
-        f1 = frac[valid]
-
-        acc[:, k0v] += arr[:, valid] * f0
-        wts[k0v] += f0
-
-        in_range = k1v < wts.size
-        if np.any(in_range):
-            acc[:, k1v[in_range]] += arr[:, valid][:, in_range] * f1[in_range]
-            wts[k1v[in_range]] += f1[in_range]
-
-    def build_mosaic(manifest, coords):
-        """Assemble all sections into a complete mosaic.
-
-        Args:
-            manifest: DataFrame with section metadata.
-            coords: DataFrame with CPT coordinates and distances.
-
-        Returns:
-            tuple: (mosaic, xmin, xmax, global_dx)
-                - mosaic: Assembled mosaic array (N_ROWS × width)
-                - xmin: Leftmost coordinate
-                - xmax: Rightmost coordinate
-                - global_dx: Pixel size used in mosaic
-
-        Raises:
-            RuntimeError: If no sections with GAN CSVs are found.
-        """
-        logger.info("[INFO] Building mosaic from sections...")
-        trace(f"Mosaic build: initial manifest size={len(manifest)}")
-        manifest = manifest.copy()
-        manifest["gan_csv"] = manifest["section_index"].apply(find_latest_gan_csv)
-        trace(
-            f"Mosaic build: gan_csv assignment nulls={manifest['gan_csv'].isna().sum()}"
-        )
-
-        missing = manifest[manifest["gan_csv"].isna()]
-        if not missing.empty:
-            logger.warning(
-                f"[WARN] Missing GAN csv for sections: {missing['section_index'].tolist()}"
-            )
-            trace(
-                f"Mosaic build: missing GAN CSV for sections {missing['section_index'].tolist()}"
-            )
-        manifest = manifest.dropna(subset=["gan_csv"]).reset_index(drop=True)
-        trace(f"Mosaic build: manifest size after drop={len(manifest)}")
-        if manifest.empty:
-            logger.error("[ERROR] No sections with GAN CSVs found.")
-            trace(
-                "Mosaic build abort: empty manifest after dropping missing sections",
-                level=logging.ERROR,
-            )
-            raise RuntimeError("No sections with GAN CSVs found.")
-
-        x0_list, dx_list, x1_list = [], [], []
-        for _, row in manifest.iterrows():
-            x0, dx, x1 = compute_section_placement(row, coords)
-            x0_list.append(x0)
-            dx_list.append(dx)
-            x1_list.append(x1)
-
-        manifest["x0"] = x0_list
-        manifest["dx"] = dx_list
-        manifest["x1"] = x1_list
-
-        xmin, xmax, global_dx, width = choose_global_grid(manifest)
-
-        acc = np.zeros((N_ROWS, width))
-        wts = np.zeros(width)
-
-        for _, row in manifest.iterrows():
-            logger.info(f"[INFO] Adding section {row['section_index']} to mosaic.")
-            trace(
-                f"Mosaic accumulation: section {row['section_index']} x0={row['x0']:.3f} dx={row['dx']:.4f}"
-            )
-            add_section_to_accumulator(
-                acc,
-                wts,
-                row["gan_csv"],
-                float(row["x0"]),
-                float(row["dx"]),
-                xmin,
-                global_dx,
-            )
-            col_wt_nonzero = int((wts > 0).sum())
-            trace(
-                f"Mosaic accumulation: after section {row['section_index']} nonzero weighted cols={col_wt_nonzero}"
-            )
-
-        eps = 1e-12
-        mosaic = acc / np.maximum(wts, eps)[None, :]
-        logger.info("[INFO] Mosaic built successfully.")
-        trace(
-            f"Mosaic built: shape={mosaic.shape} xmin={xmin:.2f} xmax={xmax:.2f} dx={global_dx:.4f}"
-        )
-        return mosaic, xmin, xmax, global_dx
-
-    def plot_mosaic(mosaic, xmin, xmax, global_dx, out_png):
-        """Create and save mosaic visualization with coordinate axes.
-
-        Args:
-            mosaic: Mosaic data array (N_ROWS x width).
-            xmin: Leftmost coordinate in meters.
-            xmax: Rightmost coordinate in meters.
-            global_dx: Pixel size in meters per pixel.
-            out_png: Output path for PNG file.
-
-        Note:
-            Creates visualization with 4 axes:
-            - Bottom: Distance along line (meters)
-            - Top: Pixel index
-            - Left: Depth index (0 to N_ROWS-1)
-            - Right: Real depth (meters, computed from y_top_m and y_bottom_m)
-        """
-        logger.info(f"[INFO] Plotting mosaic to PNG: {out_png}")
-        horiz_m = xmax - xmin
-        vert_m = abs(y_bottom_m - y_top_m)
-        base_width = 16
-        height = np.clip(base_width * (vert_m / max(horiz_m, 1e-12)), 2, 12)
-        fig, ax = plt.subplots(figsize=(base_width, height))
-        im = ax.imshow(
-            mosaic,
-            cmap="viridis",
-            vmin=0,
-            vmax=4.5,
-            aspect="auto",
-            extent=[xmin, xmax, N_ROWS - 1, 0],
-        )
-        plt.colorbar(im, label="Value")
-        ax.set_xlabel("Distance along line (m)")
-        ax.set_ylabel("Depth Index")
-
-        def m_to_px(x):
-            return (x - xmin) / global_dx
-
-        def px_to_m(p):
-            return xmin + p * global_dx
-
-        top = ax.secondary_xaxis("top", functions=(m_to_px, px_to_m))
-        top.set_xlabel("Pixel index")
-
-        def idx_to_meters(y_idx):
-            return y_top_m + (y_idx / (N_ROWS - 1)) * (y_bottom_m - y_top_m)
-
-        def meters_to_idx(y_m):
-            denom = y_bottom_m - y_top_m
-            return 0.0 if abs(denom) < 1e-12 else (y_m - y_top_m) * (N_ROWS - 1) / denom
-
-        right = ax.secondary_yaxis("right", functions=(idx_to_meters, meters_to_idx))
-        right.set_ylabel("Depth (m)")
-        plt.title("SchemaGAN Mosaic")
-        plt.tight_layout()
-        plt.savefig(out_png, dpi=220)
-        plt.close()
-        logger.info(f"[INFO] Mosaic PNG saved: {out_png}")
+    logger.info(f"Loading manifest from: {manifest_csv}")
+    logger.info(f"Loading coordinates from: {coords_csv}")
 
     try:
-        logger.info("[INFO] Starting mosaic creation...")
-        mosaic, xmin, xmax, global_dx = build_mosaic(manifest, coords)
-        mosaic_csv = mosaic_folder / "schemaGAN_mosaic.csv"
-        pd.DataFrame(mosaic).to_csv(mosaic_csv, index=False)
-        logger.info(f"[INFO] Mosaic CSV saved: {mosaic_csv}")
-        trace(f"Mosaic CSV saved at {mosaic_csv}")
-        mosaic_png = mosaic_folder / "schemaGAN_mosaic.png"
-        plot_mosaic(mosaic, xmin, xmax, global_dx, mosaic_png)
-        logger.info(f"[INFO] Mosaic saved: {mosaic_csv.name} & {mosaic_png.name}")
-        trace(f"Mosaic PNG saved at {mosaic_png}")
-        logger.info("Step 6 complete.")
+        manifest, coords = load_inputs(manifest_csv, coords_csv)
     except Exception as e:
-        logger.error(f"[ERROR] Failed to create mosaic: {e}")
+        logger.error(f"Failed to load manifest or coordinates: {e}")
         raise
+
+    # Debug: Check if vertical windowing columns are present
+    logger.info(f"Manifest columns: {manifest.columns.tolist()}")
+    if "depth_start_row" in manifest.columns and "depth_end_row" in manifest.columns:
+        logger.info(
+            f"Vertical windowing detected: depth_start_row range [{manifest['depth_start_row'].min()}..{manifest['depth_end_row'].max()-1}]"
+        )
+        logger.info(
+            f"Expected mosaic height: {int(manifest['depth_end_row'].max()) - int(manifest['depth_start_row'].min())} rows"
+        )
+    else:
+        logger.info("No vertical windowing columns found - will use simple stacking")
+
+    # Temporarily update create_mosaic module constants BEFORE calling find_latest_gan_csv_for_row
+    import create_mosaic
+
+    original_gan_dir = create_mosaic.GAN_DIR
+    original_n_cols = create_mosaic.N_COLS
+    original_n_rows = create_mosaic.N_ROWS_WINDOW
+    original_y_top = create_mosaic.Y_TOP_M
+    original_y_bottom = create_mosaic.Y_BOTTOM_M
+
+    create_mosaic.GAN_DIR = gan_images_folder
+    create_mosaic.N_COLS = N_COLS
+    create_mosaic.N_ROWS_WINDOW = N_ROWS
+    create_mosaic.Y_TOP_M = y_top_m
+    create_mosaic.Y_BOTTOM_M = y_bottom_m
+
+    # Add GAN file paths to manifest using the external module's function
+    logger.info("Matching GAN CSV files to sections...")
+    manifest["gan_csv"] = manifest.apply(
+        lambda row: find_latest_gan_csv_for_row(row), axis=1
+    )
+
+    # Check for missing GAN files
+    missing = manifest[manifest["gan_csv"].isna()]
+    if not missing.empty:
+        logger.warning(
+            f"Missing GAN CSV for sections: {missing['section_index'].tolist()}"
+        )
+        # Debug: Show some examples of what we're looking for
+        for idx in missing["section_index"].head(3):
+            row = manifest[manifest["section_index"] == idx].iloc[0]
+            section_stem = Path(row["csv_path"]).stem
+            pattern = f"{section_stem}_seed*_gan.csv"
+            logger.warning(
+                f"  Section {idx}: Looking for '{pattern}' in {gan_images_folder}"
+            )
+
+    manifest = manifest.dropna(subset=["gan_csv"]).reset_index(drop=True)
+    if manifest.empty:
+        logger.error("No sections with GAN CSVs found.")
+        # Restore original values before raising
+        create_mosaic.GAN_DIR = original_gan_dir
+        create_mosaic.N_COLS = original_n_cols
+        create_mosaic.N_ROWS_WINDOW = original_n_rows
+        create_mosaic.Y_TOP_M = original_y_top
+        create_mosaic.Y_BOTTOM_M = original_y_bottom
+        raise RuntimeError("No sections with GAN CSVs found.")
+
+    # Build mosaic (handles both horizontal overlaps and vertical stacking)
+    logger.info("Building mosaic with vertical and horizontal blending...")
+    logger.info(
+        f"[DEBUG] Before build_mosaic: manifest shape={manifest.shape}, has depth_start_row={('depth_start_row' in manifest.columns)}"
+    )
+    try:
+        mosaic, xmin, xmax, global_dx, n_rows_total = build_mosaic(manifest, coords)
+        logger.info(
+            f"[SUCCESS] Mosaic built: shape={mosaic.shape}, n_rows_total={n_rows_total}"
+        )
+    except Exception as e:
+        logger.error(f"Failed to build mosaic: {e}")
+        # Restore original values
+        create_mosaic.GAN_DIR = original_gan_dir
+        create_mosaic.N_COLS = original_n_cols
+        create_mosaic.N_ROWS_WINDOW = original_n_rows
+        create_mosaic.Y_TOP_M = original_y_top
+        create_mosaic.Y_BOTTOM_M = original_y_bottom
+        raise
+
+    # Save mosaic CSV
+    mosaic_csv = mosaic_folder / "schemaGAN_mosaic.csv"
+    pd.DataFrame(mosaic).to_csv(mosaic_csv, index=False)
+    logger.info(f"Mosaic CSV saved: {mosaic_csv}")
+    trace(f"Mosaic shape: {mosaic.shape}, saved to {mosaic_csv}")
+
+    # Create and save mosaic visualization
+    mosaic_png = mosaic_folder / "schemaGAN_mosaic.png"
+    logger.info(f"Creating mosaic visualization: {mosaic_png}")
+
+    try:
+        plot_mosaic(mosaic, xmin, xmax, global_dx, n_rows_total, mosaic_png)
+    except Exception as e:
+        logger.error(f"Failed to plot mosaic: {e}")
+        # Restore original values
+        create_mosaic.GAN_DIR = original_gan_dir
+        create_mosaic.N_COLS = original_n_cols
+        create_mosaic.N_ROWS_WINDOW = original_n_rows
+        create_mosaic.Y_TOP_M = original_y_top
+        create_mosaic.Y_BOTTOM_M = original_y_bottom
+        raise
+
+    # Restore original values
+    create_mosaic.GAN_DIR = original_gan_dir
+    create_mosaic.N_COLS = original_n_cols
+    create_mosaic.N_ROWS_WINDOW = original_n_rows
+    create_mosaic.Y_TOP_M = original_y_top
+    create_mosaic.Y_BOTTOM_M = original_y_bottom
+
+    logger.info(f"Mosaic complete: {mosaic_csv.name} & {mosaic_png.name}")
+    logger.info("Step 6 complete.")
+    trace(f"Mosaic creation finished: CSV and PNG saved")
 
 
 def main():
@@ -983,6 +876,7 @@ def main():
             RIGHT_PAD_FRACTION,
             DIR_FROM,
             DIR_TO,
+            VERTICAL_OVERLAP,
         )
         logger.info(f"[DEBUG] Section creation returned {len(manifest)} sections")
     except Exception as e:
