@@ -267,7 +267,7 @@ def build_section_matrix(
     n_rows: int,
     n_cols: int,
 ) -> Tuple[np.ndarray, List[Dict[str, int]], List[str]]:
-    """Create a (n_rows × n_cols) grid and paint CPT columns.
+    """Create a (n_rows x n_cols) grid and paint CPT columns.
 
     Args:
         sect_names: List of CPT names in the current section (in order).
@@ -306,13 +306,52 @@ def write_section_csv(grid: np.ndarray, out_csv: Path, n_cols: int) -> None:
     """Write a single section matrix to CSV with a Depth_Index column.
 
     Args:
-        grid: (n_rows × n_cols) array of floats (soil class or metric).
+        grid: (n_rows x n_cols) array of floats (soil class or metric).
         out_csv: Path to the output CSV file.
         n_cols: Number of columns in the grid (used for header naming).
     """
     out_df = pd.DataFrame(grid, columns=[f"x{j:03d}" for j in range(n_cols)])
     out_df.insert(0, "Depth_Index", np.arange(grid.shape[0], dtype=int))
     out_df.to_csv(out_csv, index=False)
+
+
+def split_cpt_into_windows(
+    cpt_df: pd.DataFrame,
+    window_rows: int,
+) -> List[Tuple[int, pd.DataFrame]]:
+    """Split CPT data into vertical windows of `window_rows` and reset Depth_Index.
+
+    Args:
+        cpt_df: Full CPT DataFrame with Depth_Index and CPT columns.
+        window_rows: Number of rows per window (e.g. 32 for SchemaGAN).
+
+    Returns:
+        List of (depth_index, window_df) where:
+            - depth_index: integer window index (0, 1, 2, ...)
+            - window_df: CPT data slice with Depth_Index reset to 0..window_rows-1
+
+    Raises:
+        AssertionError: If total rows is not a multiple of window_rows.
+    """
+    total_rows = len(cpt_df)
+    assert (
+        total_rows % window_rows == 0
+    ), f"CPT data has {total_rows} rows, not a multiple of {window_rows}"
+
+    n_windows = total_rows // window_rows
+    windows: List[Tuple[int, pd.DataFrame]] = []
+
+    for k in range(n_windows):
+        start_row = k * window_rows
+        end_row = (k + 1) * window_rows
+
+        slice_df = cpt_df.iloc[start_row:end_row].copy()
+        slice_df = slice_df.reset_index(drop=True)
+        slice_df["Depth_Index"] = np.arange(window_rows, dtype=int)
+
+        windows.append((k, slice_df))
+
+    return windows
 
 
 def write_manifest(manifest: List[Dict], out_dir: Path) -> None:
@@ -324,21 +363,23 @@ def write_manifest(manifest: List[Dict], out_dir: Path) -> None:
     """
     rows = []
     for m in manifest:
-        rows.append(
-            {
-                "section_index": m["section_index"],
-                "start_idx": m["start_idx"],
-                "end_idx": m["end_idx"],
-                "first_name": m["first_name"],
-                "last_name": m["last_name"],
-                "span_m": m["span_m"],
-                "left_pad_m": m["left_pad_m"],
-                "right_pad_m": m["right_pad_m"],
-                "painted_count": m["painted_count"],
-                "skipped_count": m["skipped_count"],
-                "csv_path": m["csv_path"],
-            }
-        )
+        row = {
+            "section_index": m["section_index"],
+            "start_idx": m["start_idx"],
+            "end_idx": m["end_idx"],
+            "first_name": m["first_name"],
+            "last_name": m["last_name"],
+            "span_m": m["span_m"],
+            "left_pad_m": m["left_pad_m"],
+            "right_pad_m": m["right_pad_m"],
+            "painted_count": m["painted_count"],
+            "skipped_count": m["skipped_count"],
+            "csv_path": m["csv_path"],
+        }
+        if "depth_window" in m:
+            row["depth_window"] = m["depth_window"]
+        rows.append(row)
+
     pd.DataFrame(rows).to_csv(out_dir / "manifest_sections.csv", index=False)
 
 
@@ -357,6 +398,8 @@ def process_sections(
     right_pad_frac: float,
     from_where: str,
     to_where: str,
+    depth_index: int | None = None,
+    write_distances: bool = True,
 ) -> List[Dict]:
     """Orchestrate the full pipeline and return a manifest of produced sections.
 
@@ -366,7 +409,7 @@ def process_sections(
       3) Create overlapping sections and map their distances to columns.
       4) Resolve column collisions and paint grids.
       5) Save each section to CSV and collect manifest info.
-      6) Save a distances CSV for traceability.
+      6) Optionally save a distances CSV for traceability (once is enough).
 
     Args:
         coords_df: Coordinates DataFrame with ['name','x','y'].
@@ -380,6 +423,9 @@ def process_sections(
         right_pad_frac: Right padding as a fraction of the section span.
         from_where: Sort start direction ('west','east','north','south').
         to_where: Sort end direction ('west','east','north','south').
+        depth_index: Optional vertical window index (0,1,2,...). Used in filenames
+                     and manifest (e.g. z_00, z_01). If None, no depth tag is used.
+        write_distances: If True, write cpt_coords_with_distances.csv.
 
     Returns:
         Manifest: A list of dictionaries describing each generated section.
@@ -445,31 +491,40 @@ def process_sections(
             n_cols=n_cols,
         )
 
-        # Write section CSV (name includes index)
-        out_csv = out_dir / f"section_{i:02d}_cpts_{start+1:03d}_to_{end:03d}.csv"
+        # Build base filename with optional depth tag
+        if depth_index is None:
+            base_name = f"section_{i:02d}"
+        else:
+            base_name = f"section_{i:02d}_z_{depth_index:02d}"
+
+        out_csv = out_dir / f"{base_name}_cpts_{start+1:03d}_to_{end:03d}.csv"
         write_section_csv(grid, out_csv, n_cols)
 
         # Collect manifest info
-        manifest.append(
-            {
-                "section_index": i,
-                "start_idx": int(start),
-                "end_idx": int(end - 1),
-                "first_name": names[0],
-                "last_name": names[-1],
-                "span_m": float(span),
-                "left_pad_m": float(left_pad),
-                "right_pad_m": float(right_pad),
-                "painted_count": len(painted),
-                "skipped_count": len(skipped),
-                "csv_path": str(out_csv),
-                "painted": painted,
-                "skipped": skipped,
-            }
-        )
+        entry = {
+            "section_index": i,
+            "start_idx": int(start),
+            "end_idx": int(end - 1),
+            "first_name": names[0],
+            "last_name": names[-1],
+            "span_m": float(span),
+            "left_pad_m": float(left_pad),
+            "right_pad_m": float(right_pad),
+            "painted_count": len(painted),
+            "skipped_count": len(skipped),
+            "csv_path": str(out_csv),
+            "painted": painted,
+            "skipped": skipped,
+        }
+        if depth_index is not None:
+            entry["depth_window"] = int(depth_index)
 
-    # (5) Save distances for traceability
-    coords_dist.to_csv(out_dir / "cpt_coords_with_distances.csv", index=False)
+        manifest.append(entry)
+
+    # (5) Save distances for traceability (once is enough, but overwriting is harmless)
+    if write_distances:
+        coords_dist.to_csv(out_dir / "cpt_coords_with_distances.csv", index=False)
+
     return manifest
 
 
@@ -478,46 +533,68 @@ def process_sections(
 # -----------------------------
 if __name__ == "__main__":
     # ----- CONFIG -----
-    COORDS_CSV = Path(r"C:\VOW\gis\coords\betuwepand_dike_north.csv")
+    COORDS_CSV = Path(r"C:\VOW\gis\coords\betuwepand_dike_south.csv")
     CPT_DATA_CSV = Path(
-        r"C:\VOW\data\schgan_inputs\testtestest\test_dike_north_input_new.csv"
+        r"C:\VOW\res\south\exp_3\2_compressed_cpt\compressed_cpt_data_mean_128px.csv"
     )
-    OUT_DIR = Path(r"C:\VOW\data\test_outputs")
+    OUT_DIR = Path(r"C:\VOW\res")
 
     N_COLS = 512
-    N_ROWS = 32
+    N_ROWS_PER_WINDOW = 32  # SchemaGAN image height
     CPTS_PER_SECTION = 6
     OVERLAP_CPTS = 2
-    LEFT_PAD_FRACTION = 0.10  # Use 0.05 to match original script exactly
-    RIGHT_PAD_FRACTION = 0.10  # Use 0.05 to match original script exactly
+    LEFT_PAD_FRACTION = 0.10
+    RIGHT_PAD_FRACTION = 0.10
     DIR_FROM, DIR_TO = "west", "east"
     # ------------------
 
     ensure_outdir(OUT_DIR)
 
     coords_df = pd.read_csv(COORDS_CSV)
-    cpt_df = pd.read_csv(CPT_DATA_CSV)
+    cpt_df_full = pd.read_csv(CPT_DATA_CSV)
 
-    validate_input_files(coords_df, cpt_df, N_ROWS)
-
-    manifest = process_sections(
-        coords_df=coords_df,
-        cpt_df=cpt_df,
-        out_dir=OUT_DIR,
-        n_cols=N_COLS,
-        n_rows=N_ROWS,
-        per=CPTS_PER_SECTION,
-        overlap=OVERLAP_CPTS,
-        left_pad_frac=LEFT_PAD_FRACTION,
-        right_pad_frac=RIGHT_PAD_FRACTION,
-        from_where=DIR_FROM,
-        to_where=DIR_TO,
+    # Split full CPT table into stacked 32-row windows (0,1,2,...)
+    depth_windows = split_cpt_into_windows(
+        cpt_df=cpt_df_full,
+        window_rows=N_ROWS_PER_WINDOW,
     )
 
-    write_manifest(manifest, OUT_DIR)
+    all_manifests: List[Dict] = []
 
-    logger.info(f"Written {len(manifest)} sections to: {OUT_DIR.resolve()}")
-    if any(m["skipped_count"] for m in manifest):
+    for w_idx, cpt_df_win in depth_windows:
+        logger.info(f"Processing depth window z_{w_idx:02d} ...")
+
+        # Validate this window has the expected number of rows
+        validate_input_files(coords_df, cpt_df_win, N_ROWS_PER_WINDOW)
+
+        # Only write distances file for the first window (it is identical for all)
+        write_dists = w_idx == 0
+
+        manifest = process_sections(
+            coords_df=coords_df,
+            cpt_df=cpt_df_win,
+            out_dir=OUT_DIR,
+            n_cols=N_COLS,
+            n_rows=N_ROWS_PER_WINDOW,
+            per=CPTS_PER_SECTION,
+            overlap=OVERLAP_CPTS,
+            left_pad_frac=LEFT_PAD_FRACTION,
+            right_pad_frac=RIGHT_PAD_FRACTION,
+            from_where=DIR_FROM,
+            to_where=DIR_TO,
+            depth_index=w_idx,
+            write_distances=write_dists,
+        )
+
+        all_manifests.extend(manifest)
+
+    # Single combined manifest for all depth windows
+    write_manifest(all_manifests, OUT_DIR)
+
+    logger.info(
+        f"Written {len(all_manifests)} sections (all depth windows) to: {OUT_DIR.resolve()}"
+    )
+    if any(m["skipped_count"] for m in all_manifests):
         logger.info(
             "[NOTE] Some CPT names in coords had no matching data columns and were left as zero columns. "
             "Consider aligning names or adding a mapping step."
