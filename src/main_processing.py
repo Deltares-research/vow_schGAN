@@ -2,12 +2,13 @@
 Main script for the VOW SchemaGAN pipeline.
 
 This script orchestrates the complete workflow by calling individual script functions:
-1. Setup experiment folder structure
+1. Setup experiment folder structure (1_coords, 2_compressed_cpt, 3_sections, 4_gan_images, 5_enhance, 6_mosaic)
 2. Extract coordinates from CPT files (calls extract_coords.py)
 3. Extract and compress CPT data (calls extract_data.py)
 4. Create sections for SchemaGAN input (calls create_schGAN_input_file.py)
-5. Generate schemas using trained SchemaGAN model (calls create_schema.py)
-6. Create mosaic from generated schemas (calls create_mosaic.py)
+5. Generate schemas using trained SchemaGAN model (calls create_schema.py → 4_gan_images)
+6. Enhance schemas with boundary sharpening (calls boundary_enhancement.py → 5_enhance)
+7. Create mosaics from generated schemas (calls create_mosaic.py → 6_mosaic, creates both original and enhanced)
 
 Configure the paths and parameters in the CONFIG section below.
 """
@@ -53,8 +54,8 @@ from utils import setup_experiment
 # Base configuration
 RES_DIR = Path(r"C:\VOW\res")
 REGION = "north"
-EXP_NAME = "exp_9"
-DESCRIPTION = "CPT compression to 64, 3 CPT overlap, 50% vertical overlap. 10% padding"
+EXP_NAME = "exp_10"
+DESCRIPTION = "CPT compression to 64, 3 CPT overlap, 50% vertical overlap. 10% padding. Added boundary enhancement."
 
 # Input data paths
 CPT_FOLDER = Path(r"C:\VOW\data\cpts\betuwepand\dike_north_BRO")
@@ -81,8 +82,16 @@ VERTICAL_OVERLAP = 50  # [%] Vertical overlap between depth windows (0.0 = no ov
 
 # Visualization
 SHOW_CPT_LOCATIONS = True  # Show vertical lines at CPT positions in plots (both individual sections and mosaic)
-# Only used if CPT_DEPTH_PIXELS > N_ROWS
-# Example: With 128px CPT data and 32px windows, 0% overlap = 4 windows, 50% overlap = 7 windows
+
+# Boundary Enhancement
+ENHANCE_METHOD = "none"  # Enhancement method to sharpen layer boundaries
+# Options:
+#   "guided_filter": Edge-preserving guided filter (RECOMMENDED - best for GAN outputs, no halos)
+#   "unsharp_mask": Classic sharpening via unsharp masking (can add artifacts)
+#   "laplacian": Laplacian-based sharpening (aggressive, creates artifacts)
+#   "dense_crf": Dense CRF edge-aware smoothing (experimental, ineffective)
+#   "none" or None: No enhancement (use original GAN output)
+
 
 LEFT_PAD_FRACTION = 0.1  # Left padding as fraction of section span
 RIGHT_PAD_FRACTION = 0.1  # Right padding as fraction of section span
@@ -605,6 +614,7 @@ def run_mosaic_creation(
     mosaic_folder: Path,
     y_top_m: float,
     y_bottom_m: float,
+    mosaic_prefix: str = "schemaGAN",
 ):
     """Combine all generated schema sections into a seamless mosaic with vertical stacking.
 
@@ -619,6 +629,7 @@ def run_mosaic_creation(
         mosaic_folder: Output folder for mosaic files.
         y_top_m: Top depth in meters for visualization axis.
         y_bottom_m: Bottom depth in meters for visualization axis.
+        mosaic_prefix: Prefix for output files (e.g., \"original\", \"enhanced\").
 
     Raises:
         RuntimeError: If no valid GAN CSV files are found.
@@ -631,8 +642,8 @@ def run_mosaic_creation(
         vertical stacking is used.
 
         Output files:
-        - schemaGAN_mosaic.csv: Complete mosaic data matrix
-        - schemaGAN_mosaic.png: Visualization with distance and depth axes
+        - {mosaic_prefix}_mosaic.csv: Complete mosaic data matrix
+        - {mosaic_prefix}_mosaic.png: Visualization with distance and depth axes
     """
     from create_mosaic import (
         load_inputs,
@@ -748,13 +759,13 @@ def run_mosaic_creation(
         raise
 
     # Save mosaic CSV
-    mosaic_csv = mosaic_folder / "schemaGAN_mosaic.csv"
+    mosaic_csv = mosaic_folder / f"{mosaic_prefix}_mosaic.csv"
     pd.DataFrame(mosaic).to_csv(mosaic_csv, index=False)
     logger.info(f"Mosaic CSV saved: {mosaic_csv}")
     trace(f"Mosaic shape: {mosaic.shape}, saved to {mosaic_csv}")
 
     # Create and save mosaic visualization
-    mosaic_png = mosaic_folder / "schemaGAN_mosaic.png"
+    mosaic_png = mosaic_folder / f"{mosaic_prefix}_mosaic.png"
     logger.info(f"Creating mosaic visualization: {mosaic_png}")
 
     try:
@@ -790,16 +801,123 @@ def run_mosaic_creation(
     trace(f"Mosaic creation finished: CSV and PNG saved")
 
 
+def run_enhancement(
+    gan_images_folder: Path,
+    output_folder: Path,
+    sections_folder: Path,
+    y_top_m: float,
+    y_bottom_m: float,
+    method: str = "guided_filter",
+):
+    """Apply boundary enhancement to generated schemas and create visualizations.
+
+    Processes all GAN-generated CSV files and applies the specified enhancement
+    method to sharpen layer boundaries. Creates both CSV and PNG outputs.
+
+    Args:
+        gan_images_folder: Folder containing original GAN output CSVs
+        output_folder: Folder where enhanced CSVs and PNGs will be saved
+        sections_folder: Folder containing manifest and coordinates for PNG generation
+        y_top_m: Top depth in meters for visualization
+        y_bottom_m: Bottom depth in meters for visualization
+        method: Enhancement method to use:
+            - "guided_filter": Edge-preserving filter (recommended, best for GAN)
+            - "unsharp_mask": Classic sharpening
+            - "laplacian": Aggressive sharpening
+            - "dense_crf": CRF-based (experimental)
+            - "none": No enhancement
+
+    Note:
+        Only processes CSV files matching pattern: *_gan.csv
+        Enhanced files are saved with same name in output_folder.
+        PNGs are created with same visualization style as original GAN images.
+    """
+    from boundary_enhancement import enhance_schema_from_file, create_enhanced_png
+    import pandas as pd
+
+    logger.info(f"Enhancement method: {method}")
+    logger.info(f"Input folder: {gan_images_folder}")
+    logger.info(f"Output folder: {output_folder}")
+
+    output_folder.mkdir(parents=True, exist_ok=True)
+
+    # Load manifest and coords for PNG generation
+    manifest_csv = sections_folder / "manifest_sections.csv"
+    coords_csv = sections_folder / "cpt_coords_with_distances.csv"
+
+    if not manifest_csv.exists() or not coords_csv.exists():
+        logger.warning(f"Manifest or coords CSV not found. PNGs will not be created.")
+        create_pngs = False
+    else:
+        create_pngs = True
+
+    # Find all GAN-generated CSV files
+    gan_csv_files = sorted(gan_images_folder.glob("*_gan.csv"))
+
+    if not gan_csv_files:
+        logger.warning(f"No GAN CSV files found in {gan_images_folder}")
+        return
+
+    logger.info(f"Found {len(gan_csv_files)} GAN images to enhance")
+
+    ok, fail = 0, 0
+
+    for i, csv_file in enumerate(gan_csv_files, 1):
+        try:
+            # Output paths
+            output_csv = output_folder / csv_file.name
+            output_png = output_folder / csv_file.name.replace(".csv", ".png")
+
+            # Apply enhancement to CSV
+            enhanced_csv, method_used = enhance_schema_from_file(
+                csv_file,
+                output_csv,
+                method=method,
+            )
+
+            # Create PNG visualization
+            if create_pngs:
+                try:
+                    create_enhanced_png(
+                        enhanced_csv,
+                        output_png,
+                        manifest_csv,
+                        coords_csv,
+                        y_top_m,
+                        y_bottom_m,
+                        show_cpt_locations=SHOW_CPT_LOCATIONS,
+                    )
+                except Exception as png_error:
+                    logger.warning(
+                        f"Failed to create PNG for {csv_file.name}: {png_error}"
+                    )
+
+            ok += 1
+            if (i % 10 == 0) or (i == len(gan_csv_files)):
+                logger.info(
+                    f"[{i:03d}/{len(gan_csv_files)}] Enhanced: {csv_file.name} using {method_used}"
+                )
+
+        except Exception as e:
+            fail += 1
+            logger.error(f"[{i:03d}/{len(gan_csv_files)}] FAIL on {csv_file.name}: {e}")
+
+    logger.info(f"Enhancement complete: {ok} succeeded, {fail} failed")
+    logger.info(f"Enhanced schemas saved in: {output_folder}")
+    logger.info("Step 6 complete.")
+
+
 def main():
     """Execute the complete VOW SchemaGAN pipeline.
 
-    Orchestrates all six steps of the workflow:
-    1. Creates experiment folder structure
+    Orchestrates all seven steps of the workflow:
+    1. Creates experiment folder structure (1_coords, 2_compressed_cpt, 3_sections, 4_gan_images, 5_enhance, 6_mosaic)
     2. Extracts and validates CPT coordinates from GEF files
-    3. Processes CPT data and compresses to 32-pixel depth profiles
+    3. Processes CPT data and compresses to specified depth resolution
     4. Creates spatial sections with overlapping CPTs
-    5. Generates detailed schemas using SchemaGAN model
-    6. Assembles all sections into a seamless mosaic
+    5. Generates schemas using SchemaGAN model (saved to 4_gan_images)
+    6. Enhances schemas with boundary sharpening (if enabled, saved to 5_enhance)
+    7. Assembles sections into mosaics (creates both original and enhanced mosaics)
 
     All configuration is taken from module-level CONFIG constants.
     Results are saved in: {RES_DIR}/{REGION}/{EXP_NAME}/
@@ -947,7 +1065,7 @@ def main():
     # 5. GENERATE SCHEMAS USING SCHEMAGAN MODEL
     # =============================================================================
     logger.info("=" * 60)
-    logger.info("Step 5: Generating schemas using SchemaGAN model...")
+    logger.info("Step 5: Generating schemas using SchemaGAN model (original output)...")
     logger.info(f"[DEBUG] SchemaGAN model path: {SCHGAN_MODEL_PATH}")
     logger.info(f"[DEBUG] Model exists: {SCHGAN_MODEL_PATH.exists()}")
 
@@ -974,29 +1092,86 @@ def main():
             return
 
     # =============================================================================
-    # 6. CREATE MOSAIC FROM GENERATED SCHEMAS
+    # 6. ENHANCE GENERATED SCHEMAS (BOUNDARY SHARPENING)
     # =============================================================================
     logger.info("=" * 60)
-    logger.info("Step 6: Creating mosaic from generated schemas...")
+    logger.info("Step 6: Enhancing generated schemas (boundary sharpening)...")
+    logger.info(f"[DEBUG] Enhancement method: {ENHANCE_METHOD}")
+
+    if ENHANCE_METHOD and ENHANCE_METHOD.lower() != "none":
+        try:
+            logger.info(f"[DEBUG] Applying {ENHANCE_METHOD} enhancement...")
+            run_enhancement(
+                folders["4_gan_images"],
+                folders["5_enhance"],
+                folders["3_sections"],
+                y_top_final,
+                y_bottom_final,
+                ENHANCE_METHOD,
+            )
+            logger.info("[DEBUG] Enhancement completed successfully")
+        except Exception as e:
+            logger.error(f"Failed to enhance schemas: {e}")
+            logger.error(f"[DEBUG] Enhancement exception: {e}")
+            import traceback
+
+            logger.error(f"[DEBUG] Traceback: {traceback.format_exc()}")
+            return
+    else:
+        logger.info("Enhancement disabled (ENHANCE_METHOD=None or 'none')")
+        logger.info("Skipping enhancement step.")
+
+    # =============================================================================
+    # 7. CREATE MOSAICS FROM GENERATED SCHEMAS
+    # =============================================================================
+    logger.info("=" * 60)
+    logger.info("Step 7: Creating mosaics from generated schemas...")
     logger.info("[DEBUG] About to call run_mosaic_creation function...")
 
+    # Create mosaic from original GAN images
     try:
-        logger.info("[DEBUG] Calling run_mosaic_creation function...")
+        logger.info(
+            "[DEBUG] Creating mosaic from original GAN images (4_gan_images)..."
+        )
         run_mosaic_creation(
             folders["3_sections"],
             folders["4_gan_images"],
-            folders["5_mosaic"],
+            folders["6_mosaic"],
             y_top_final,
             y_bottom_final,
+            mosaic_prefix="original",
         )
-        logger.info("[DEBUG] Mosaic creation completed successfully")
+        logger.info("[DEBUG] Original mosaic creation completed successfully")
     except Exception as e:
-        logger.error(f"Failed to create mosaic: {e}")
+        logger.error(f"Failed to create original mosaic: {e}")
         logger.error(f"[DEBUG] Mosaic creation exception: {e}")
         import traceback
 
         logger.error(f"[DEBUG] Traceback: {traceback.format_exc()}")
         return
+
+    # Create mosaic from enhanced images if enhancement was applied
+    if ENHANCE_METHOD and ENHANCE_METHOD.lower() != "none":
+        try:
+            logger.info(f"[DEBUG] Creating mosaic from enhanced images (5_enhance)...")
+            run_mosaic_creation(
+                folders["3_sections"],
+                folders["5_enhance"],
+                folders["6_mosaic"],
+                y_top_final,
+                y_bottom_final,
+                mosaic_prefix="enhanced",
+            )
+            logger.info("[DEBUG] Enhanced mosaic creation completed successfully")
+        except Exception as e:
+            logger.error(f"Failed to create enhanced mosaic: {e}")
+            logger.error(f"[DEBUG] Enhanced mosaic creation exception: {e}")
+            import traceback
+
+            logger.error(f"[DEBUG] Traceback: {traceback.format_exc()}")
+            # Don't return here, original mosaic was already created
+    else:
+        logger.info("Skipping enhanced mosaic (no enhancement applied)")
 
     # =============================================================================
     # COMPLETION
@@ -1029,6 +1204,14 @@ def main():
     else:
         logger.info(f"  - Depth range: {depth_top} to {depth_bottom} m")
     logger.info(f"  - Grid size: {N_ROWS} × {N_COLS} pixels")
+    logger.info(f"  - Enhancement: {ENHANCE_METHOD if ENHANCE_METHOD else 'None'}")
+
+    if ENHANCE_METHOD and ENHANCE_METHOD.lower() != "none":
+        logger.info(
+            f"  - Mosaics created: original (4_gan_images) + enhanced (5_enhance)"
+        )
+    else:
+        logger.info(f"  - Mosaics created: original (4_gan_images) only")
 
 
 if __name__ == "__main__":

@@ -237,7 +237,8 @@ def setup_experiment(
         "2_compressed_cpt",
         "3_sections",
         "4_gan_images",
-        "5_mosaic",
+        "5_enhance",
+        "6_mosaic",
     ]
 
     # Create subfolders
