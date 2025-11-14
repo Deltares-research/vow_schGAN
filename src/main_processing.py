@@ -78,6 +78,9 @@ OVERLAP_CPTS = 3  # Number of overlapping CPTs between sections (horizontal)
 
 # Vertical windowing parameters
 VERTICAL_OVERLAP = 50  # [%] Vertical overlap between depth windows (0.0 = no overlap, 50.0 = 50% overlap)
+
+# Visualization
+SHOW_CPT_LOCATIONS = True  # Show vertical lines at CPT positions in plots (both individual sections and mosaic)
 # Only used if CPT_DEPTH_PIXELS > N_ROWS
 # Example: With 128px CPT data and 32px windows, 0% overlap = 4 windows, 50% overlap = 7 windows
 
@@ -554,15 +557,16 @@ def run_schema_generation(
             right.set_ylabel("Depth (m)")
 
             # Add vertical lines at CPT positions (for all sections/depth windows)
-            for cpt_x in cpt_positions:
-                ax.axvline(
-                    x=cpt_x,
-                    color="black",
-                    linewidth=1,
-                    linestyle="-",
-                    alpha=0.5,
-                    zorder=10,
-                )
+            if SHOW_CPT_LOCATIONS:
+                for cpt_x in cpt_positions:
+                    ax.axvline(
+                        x=cpt_x,
+                        color="black",
+                        linewidth=1,
+                        linestyle="-",
+                        alpha=0.5,
+                        zorder=10,
+                    )
 
             # Explicitly set x-limits to prevent whitespace beyond image extent
             ax.set_xlim(x0, x1)
@@ -754,7 +758,16 @@ def run_mosaic_creation(
     logger.info(f"Creating mosaic visualization: {mosaic_png}")
 
     try:
-        plot_mosaic(mosaic, xmin, xmax, global_dx, n_rows_total, mosaic_png)
+        plot_mosaic(
+            mosaic,
+            xmin,
+            xmax,
+            global_dx,
+            n_rows_total,
+            mosaic_png,
+            coords=coords,
+            show_cpt_locations=SHOW_CPT_LOCATIONS,
+        )
     except Exception as e:
         logger.error(f"Failed to plot mosaic: {e}")
         # Restore original values

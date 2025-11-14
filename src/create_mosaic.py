@@ -309,7 +309,16 @@ def build_mosaic(manifest, coords):
 # =============================================================================
 # PLOT & SAVE
 # =============================================================================
-def plot_mosaic(mosaic, xmin, xmax, global_dx, n_rows_total, out_png: Path):
+def plot_mosaic(
+    mosaic,
+    xmin,
+    xmax,
+    global_dx,
+    n_rows_total,
+    out_png: Path,
+    coords=None,
+    show_cpt_locations=True,
+):
     """Plot the mosaic with dual axes and save as PNG."""
     horiz_m = xmax - xmin
     vert_m = abs(Y_BOTTOM_M - Y_TOP_M)
@@ -328,6 +337,11 @@ def plot_mosaic(mosaic, xmin, xmax, global_dx, n_rows_total, out_png: Path):
         extent=[xmin, xmax, n_rows_total - 1, 0],
     )
     plt.colorbar(im, label="Value")
+
+    # Add vertical lines at CPT positions if enabled and coords provided
+    if show_cpt_locations and coords is not None and "cum_along_m" in coords.columns:
+        for cpt_x in coords["cum_along_m"]:
+            ax.axvline(x=cpt_x, color="black", linewidth=1, alpha=0.5, zorder=10)
 
     ax.set_xlabel("Distance along line (m)")
     ax.set_ylabel("Depth Index (global)")
