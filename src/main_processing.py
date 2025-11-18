@@ -54,8 +54,8 @@ from utils import setup_experiment
 
 # Base configuration
 RES_DIR = Path(r"C:\VOW\res")
-REGION = "north"
-EXP_NAME = "exp_11"
+REGION = "south"
+EXP_NAME = "exp_8"
 DESCRIPTION = (
     "CPT compression to 64,"
     "3 CPT overlap,"
@@ -66,7 +66,7 @@ DESCRIPTION = (
 )
 
 # Input data paths
-CPT_FOLDER = Path(r"C:\VOW\data\cpts\betuwepand\dike_north_BRO")
+CPT_FOLDER = Path(r"C:\VOW\data\cpts\betuwepand\dike_south_BRO")
 SCHGAN_MODEL_PATH = Path(r"D:\schemaGAN\h5\schemaGAN.h5")
 
 # Processing parameters
@@ -666,6 +666,14 @@ def run_schema_generation(
                     save_uncertainty_csv(pred_std, uncertainty_csv)
                     logger.info(f"[INFO] Saved uncertainty CSV: {uncertainty_csv.name}")
                     trace(f"Uncertainty CSV saved: {uncertainty_csv}")
+
+                    # Save mean prediction CSV (for mean mosaic)
+                    mean_csv = (
+                        uncertainty_folder / f"{section_file.stem}_seed{seed}_mean.csv"
+                    )
+                    save_uncertainty_csv(pred_mean_denorm, mean_csv)
+                    logger.info(f"[INFO] Saved mean prediction CSV: {mean_csv.name}")
+                    trace(f"Mean prediction CSV saved: {mean_csv}")
 
                     # Create uncertainty visualization (match GAN output naming)
                     uncertainty_png = (
@@ -1331,6 +1339,104 @@ def main():
                 logger.info(
                     "[DEBUG] Uncertainty mosaic creation completed successfully"
                 )
+
+                # Create mosaic from mean predictions
+                logger.info("[DEBUG] Creating mean prediction mosaic...")
+                run_mosaic_creation(
+                    folders["3_sections"],
+                    folders["7_uncertainty"],
+                    folders["7_uncertainty"],
+                    y_top_final,
+                    y_bottom_final,
+                    mosaic_prefix="mean",
+                    file_suffix="mean",  # Look for *_mean.csv
+                )
+                logger.info("[DEBUG] Mean mosaic creation completed successfully")
+
+                # Create combined visualization (mean + uncertainty in 2-row plot)
+                logger.info(
+                    "[DEBUG] Creating combined mean+uncertainty visualization..."
+                )
+                try:
+                    from create_mosaic import load_inputs
+                    import matplotlib.pyplot as plt
+                    import pandas as pd
+                    import numpy as np
+
+                    # Load both mosaics
+                    mean_mosaic_csv = folders["7_uncertainty"] / "mean_mosaic.csv"
+                    uncertainty_mosaic_csv = (
+                        folders["7_uncertainty"] / "uncertainty_mosaic.csv"
+                    )
+
+                    mean_mosaic = pd.read_csv(mean_mosaic_csv, header=None).values
+                    uncertainty_mosaic = pd.read_csv(
+                        uncertainty_mosaic_csv, header=None
+                    ).values
+
+                    # Load coords for CPT markers
+                    coords_csv = folders["3_sections"] / "cpt_coords_with_distances.csv"
+                    coords = pd.read_csv(coords_csv)
+
+                    # Get mosaic extent
+                    xmin = coords["cum_along_m"].min()
+                    xmax = coords["cum_along_m"].max()
+                    n_rows_total = mean_mosaic.shape[0]
+
+                    # Create 2-row plot
+                    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(16, 8), sharex=True)
+
+                    # Top: Mean prediction
+                    im1 = ax1.imshow(
+                        mean_mosaic,
+                        cmap="viridis",
+                        vmin=0,
+                        vmax=4.5,
+                        aspect="auto",
+                        extent=[xmin, xmax, n_rows_total - 1, 0],
+                    )
+                    plt.colorbar(im1, ax=ax1, label="IC (Mean Prediction)")
+                    ax1.set_ylabel("Depth Index")
+                    ax1.set_title("Mean MC Dropout Prediction Mosaic")
+
+                    # Bottom: Uncertainty
+                    im2 = ax2.imshow(
+                        uncertainty_mosaic,
+                        cmap="hot",
+                        aspect="auto",
+                        extent=[xmin, xmax, n_rows_total - 1, 0],
+                    )
+                    plt.colorbar(im2, ax=ax2, label="Uncertainty (Std Dev)")
+                    ax2.set_ylabel("Depth Index")
+                    ax2.set_xlabel("Distance along line (m)")
+                    ax2.set_title("Prediction Uncertainty Mosaic")
+
+                    # Add CPT markers to both plots
+                    if SHOW_CPT_LOCATIONS:
+                        for cpt_x in coords["cum_along_m"]:
+                            ax1.axvline(
+                                x=cpt_x,
+                                color="black",
+                                linewidth=1,
+                                alpha=0.5,
+                                zorder=10,
+                            )
+                            ax2.axvline(
+                                x=cpt_x, color="cyan", linewidth=1, alpha=0.7, zorder=10
+                            )
+
+                    plt.tight_layout()
+                    combined_png = (
+                        folders["7_uncertainty"]
+                        / "combined_mean_uncertainty_mosaic.png"
+                    )
+                    plt.savefig(combined_png, dpi=150, bbox_inches="tight")
+                    plt.close()
+
+                    logger.info(f"[DEBUG] Combined mosaic saved: {combined_png.name}")
+
+                except Exception as ce:
+                    logger.warning(f"Failed to create combined visualization: {ce}")
 
         except Exception as e:
             logger.error(f"Failed to create uncertainty mosaic: {e}")
