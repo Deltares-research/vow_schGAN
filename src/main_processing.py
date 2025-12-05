@@ -136,7 +136,7 @@ from utils import setup_experiment
 # Base configuration
 RES_DIR = Path(base_path / "res")  # Base results directory
 REGION = "south"  # Region name for experiment folder and the data subfolder
-EXP_NAME = "exp_12"
+EXP_NAME = "exp_13"
 DESCRIPTION = (
     "Using the top fill with zeros method for equalizing CPT tops,"
     "new padding ideas,"
