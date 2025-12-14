@@ -652,10 +652,19 @@ def create_enhanced_png(
 
     plt.title(title)
     plt.tight_layout()
-    plt.savefig(output_png, dpi=220, bbox_inches="tight")
+    plt.savefig(output_png, dpi=300, bbox_inches="tight")
     plt.close()
 
     logger.info(f"Created enhanced PNG: {output_png.name}")
+
+    # Create interactive HTML
+    try:
+        from utils import create_interactive_html
+
+        html_path = output_png.with_suffix(".html")
+        create_interactive_html(output_png, html_path, title=title)
+    except Exception:
+        pass  # Silently skip if fails
 
 
 # =============================================================================

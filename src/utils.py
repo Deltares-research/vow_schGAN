@@ -261,3 +261,179 @@ def setup_experiment(
     # Use print here since logger might not be configured yet
     # The main script will log the completion
     return {"root": exp_root, **paths}
+
+
+def create_interactive_html(
+    png_path,
+    html_path=None,
+    title=None,
+    width_scale=1.0,
+    height_scale=1.0,
+    enable_tools=True,
+    extent=None,
+    xlabel="Pixel X",
+    ylabel="Pixel Y",
+):
+    """
+    Create a simple interactive HTML viewer from a PNG image with zoom controls.
+
+    Creates an HTML file with embedded image and simple zoom/pan controls:
+    - Mouse wheel to zoom in/out
+    - Click and drag to pan
+    - Reset button to return to original view
+    - Zoom in/out buttons
+
+    Args:
+        png_path: Path to the PNG image file (str or Path)
+        html_path: Path for output HTML file (default: same name as PNG with .html extension)
+        title: Title for the plot (default: filename)
+        width_scale: Scale factor for image width (default: 1.0)
+        height_scale: Scale factor for image height (default: 1.0)
+        enable_tools: Enable zoom/pan controls (default: True)
+        extent: Tuple of (xmin, xmax, ymin, ymax) for axis scaling (not used in simple version)
+        xlabel: Label for horizontal axis (not used in simple version)
+        ylabel: Label for vertical axis (not used in simple version)
+
+    Returns:
+        Path to the created HTML file
+
+    Example:
+        >>> create_interactive_html("mosaic.png")
+    """
+    try:
+        from PIL import Image
+        from pathlib import Path
+        import base64
+    except ImportError as e:
+        print(f"Warning: Cannot create interactive HTML - missing dependency: {e}")
+        return None
+
+    png_path = Path(png_path)
+    if not png_path.exists():
+        raise FileNotFoundError(f"PNG file not found: {png_path}")
+
+    # Default HTML path
+    if html_path is None:
+        html_path = png_path.with_suffix(".html")
+    else:
+        html_path = Path(html_path)
+
+    # Default title
+    if title is None:
+        title = png_path.stem.replace("_", " ").title()
+
+    # Read image and get dimensions
+    img = Image.open(png_path)
+    width, height = img.size
+
+    # Convert image to base64
+    with open(png_path, "rb") as f:
+        img_base64 = base64.b64encode(f.read()).decode()
+
+    # Create HTML with OpenSeadragon viewer
+    html_content = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>{title}</title>
+    <script src="https://cdn.jsdelivr.net/npm/openseadragon@4.1/build/openseadragon/openseadragon.min.js"></script>
+    <style>
+        * {{
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }}
+        body {{
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+            background: #2d2d2d;
+        }}
+        .header {{
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 50px;
+            background: rgba(0, 0, 0, 0.85);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }}
+        h1 {{
+            font-size: 16px;
+            font-weight: normal;
+        }}
+        #viewer {{
+            position: absolute;
+            top: 50px;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: #2d2d2d;
+        }}
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>{title}</h1>
+    </div>
+    <div id="viewer"></div>
+
+    <script>
+        OpenSeadragon({{
+            id: "viewer",
+            prefixUrl: "https://cdn.jsdelivr.net/npm/openseadragon@4.1/build/openseadragon/images/",
+            tileSources: {{
+                type: 'image',
+                url: 'data:image/png;base64,{img_base64}',
+                buildPyramid: false
+            }},
+            // Appearance
+            showNavigationControl: true,
+            navigationControlAnchor: OpenSeadragon.ControlAnchor.TOP_RIGHT,
+            showHomeControl: true,
+            showZoomControl: true,
+            showFullPageControl: true,
+            
+            // Zoom settings
+            visibilityRatio: 1.0,
+            minZoomImageRatio: 0.8,
+            maxZoomPixelRatio: 5,
+            zoomPerScroll: 1.2,
+            zoomPerClick: 2.0,
+            
+            // Animation
+            animationTime: 0.3,
+            springStiffness: 10,
+            
+            // Interaction
+            gestureSettingsMouse: {{
+                clickToZoom: false,
+                dblClickToZoom: true
+            }},
+            
+            // Initial view - fit to screen
+            defaultZoomLevel: 0,
+            homeFillsViewer: false,
+            
+            // Performance
+            immediateRender: true,
+            blendTime: 0.1,
+            alwaysBlend: false,
+            
+            // Style
+            backgroundColor: '#2d2d2d'
+        }});
+    </script>
+</body>
+</html>"""
+
+    # Write HTML file
+    with open(html_path, "w", encoding="utf-8") as f:
+        f.write(html_content)
+
+    print(f"    Interactive HTML created: {html_path.name}")
+    return html_path

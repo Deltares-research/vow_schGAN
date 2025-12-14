@@ -227,10 +227,21 @@ def visualize_uncertainty(
         plt.title(title)
 
     plt.tight_layout()
-    plt.savefig(output_png, dpi=220, bbox_inches="tight")
+    plt.savefig(output_png, dpi=300, bbox_inches="tight")
     plt.close()
 
     logger.info(f"Saved uncertainty visualization: {output_png.name}")
+
+    # Create interactive HTML
+    try:
+        from utils import create_interactive_html
+
+        html_path = output_png.with_suffix(".html")
+        create_interactive_html(
+            output_png, html_path, title=title or "Uncertainty Visualization"
+        )
+    except Exception:
+        pass  # Silently skip if fails
 
 
 def save_uncertainty_csv(
@@ -376,8 +387,27 @@ def create_uncertainty_mosaic(
 
     plt.title("Uncertainty Mosaic (MC Dropout)")
     plt.tight_layout()
-    plt.savefig(mosaic_png, dpi=500)
+    plt.savefig(mosaic_png, dpi=800, bbox_inches="tight")
     plt.close()
+    print(f"    High-res uncertainty mosaic saved (DPI=800): {mosaic_png.name}")
+
+    # Create interactive HTML with proper axes
+    try:
+        from utils import create_interactive_html
+
+        html_path = mosaic_png.with_suffix(".html")
+        extent = (xmin, xmax, n_rows_total - 1, 0)
+        create_interactive_html(
+            mosaic_png,
+            html_path,
+            title="Uncertainty Mosaic (Interactive)",
+            extent=extent,
+            xlabel="Distance along line (m)",
+            ylabel="Depth Index",
+        )
+        print(f"    Interactive HTML created: {html_path.name}")
+    except Exception as e:
+        print(f"    Warning: Could not create HTML: {e}")
 
     logger.info(f"Uncertainty mosaic PNG saved: {mosaic_png}")
 

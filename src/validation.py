@@ -375,16 +375,20 @@ def run_validation(
                     cbar.set_ticks(
                         [
                             mp.IC_MIN,
-                            mp.IC_YELLOW_ORANGE_BOUNDARY,
-                            mp.IC_ORANGE_RED_BOUNDARY,
+                            mp.IC_SAND_SANDMIX_BOUNDARY,
+                            mp.IC_SANDMIX_SILTMIX_BOUNDARY,
+                            mp.IC_SILTMIX_CLAY_BOUNDARY,
+                            mp.IC_CLAY_ORGANIC_BOUNDARY,
                             mp.IC_MAX,
                         ]
                     )
                     cbar.set_ticklabels(
                         [
                             f"{mp.IC_MIN:g}",
-                            f"{mp.IC_YELLOW_ORANGE_BOUNDARY:g}",
-                            f"{mp.IC_ORANGE_RED_BOUNDARY:g}",
+                            f"{mp.IC_SAND_SANDMIX_BOUNDARY:g}",
+                            f"{mp.IC_SANDMIX_SILTMIX_BOUNDARY:g}",
+                            f"{mp.IC_SILTMIX_CLAY_BOUNDARY:g}",
+                            f"{mp.IC_CLAY_ORGANIC_BOUNDARY:g}",
                             f"{mp.IC_MAX:g}",
                         ]
                     )
@@ -641,8 +645,10 @@ def create_validation_mosaic(
         cmap, vmin_val, vmax_val = mp.create_custom_ic_colormap()
         ic_boundaries = (
             mp.IC_MIN,
-            mp.IC_YELLOW_ORANGE_BOUNDARY,
-            mp.IC_ORANGE_RED_BOUNDARY,
+            mp.IC_SAND_SANDMIX_BOUNDARY,
+            mp.IC_SANDMIX_SILTMIX_BOUNDARY,
+            mp.IC_SILTMIX_CLAY_BOUNDARY,
+            mp.IC_CLAY_ORGANIC_BOUNDARY,
             mp.IC_MAX,
         )
 
@@ -716,8 +722,26 @@ def create_validation_mosaic(
                         )
 
         plt.tight_layout()
-        plt.savefig(mosaic_png, dpi=150, bbox_inches="tight")
+        plt.savefig(mosaic_png, dpi=300, bbox_inches="tight")
         plt.close()
+
+        # Create interactive HTML viewer with proper axes
+        try:
+            from utils import create_interactive_html
+
+            mosaic_html = images_folder / "validation_mosaic.html"
+            extent = (xmin, xmax, n_rows_total - 1, 0)
+            create_interactive_html(
+                mosaic_png,
+                mosaic_html,
+                title="Validation Mosaic (Interactive)",
+                extent=extent,
+                xlabel="Distance along line (m)",
+                ylabel="Depth Index (global)",
+            )
+            print(f"    Interactive HTML created: {mosaic_html.name}")
+        except Exception as html_err:
+            print(f"    Warning: Could not create HTML: {html_err}")
         print(f"    Mosaic PNG saved: {mosaic_png.name}")
 
     finally:
@@ -750,7 +774,7 @@ def save_validation_results(
         mae_rows.append(row)
 
     df_mae = pd.DataFrame(mae_rows)
-    
+
     # Calculate mean and std for each run (across CPTs) and add as last columns
     cpt_columns = [col for col in df_mae.columns if col != "Run_no"]
     df_mae["Mean_MAE_of_run"] = df_mae[cpt_columns].mean(axis=1)
@@ -759,7 +783,7 @@ def save_validation_results(
     # Calculate per-CPT statistics across all runs
     mean_row_mae = {"Run_no": "MEAN"}
     std_row_mae = {"Run_no": "STD"}
-    
+
     for cpt in cpt_columns:
         values = df_mae[cpt].dropna()
         if len(values) > 0:
@@ -774,13 +798,15 @@ def save_validation_results(
     all_mae_values = all_mae_values[~np.isnan(all_mae_values)]
     mean_row_mae["Mean_MAE_of_run"] = np.mean(all_mae_values)
     mean_row_mae["Std_MAE_of_run"] = np.std(all_mae_values, ddof=1)
-    
+
     # For STD row, show std of the per-run means and stds
     std_row_mae["Mean_MAE_of_run"] = np.std(df_mae["Mean_MAE_of_run"].dropna(), ddof=1)
     std_row_mae["Std_MAE_of_run"] = np.std(df_mae["Std_MAE_of_run"].dropna(), ddof=1)
 
     # Add statistics rows
-    df_mae = pd.concat([df_mae, pd.DataFrame([mean_row_mae, std_row_mae])], ignore_index=True)
+    df_mae = pd.concat(
+        [df_mae, pd.DataFrame([mean_row_mae, std_row_mae])], ignore_index=True
+    )
 
     mae_csv = output_folder / "validation_mae_results.csv"
     df_mae.to_csv(mae_csv, index=False)
@@ -794,7 +820,7 @@ def save_validation_results(
         mse_rows.append(row)
 
     df_mse = pd.DataFrame(mse_rows)
-    
+
     # Calculate mean and std for each run (across CPTs) and add as last columns
     cpt_columns = [col for col in df_mse.columns if col != "Run_no"]
     df_mse["Mean_MSE_of_run"] = df_mse[cpt_columns].mean(axis=1)
@@ -803,7 +829,7 @@ def save_validation_results(
     # Calculate per-CPT statistics across all runs
     mean_row_mse = {"Run_no": "MEAN"}
     std_row_mse = {"Run_no": "STD"}
-    
+
     for cpt in cpt_columns:
         values = df_mse[cpt].dropna()
         if len(values) > 0:
@@ -818,18 +844,20 @@ def save_validation_results(
     all_mse_values = all_mse_values[~np.isnan(all_mse_values)]
     mean_row_mse["Mean_MSE_of_run"] = np.mean(all_mse_values)
     mean_row_mse["Std_MSE_of_run"] = np.std(all_mse_values, ddof=1)
-    
+
     # For STD row, show std of the per-run means and stds
     std_row_mse["Mean_MSE_of_run"] = np.std(df_mse["Mean_MSE_of_run"].dropna(), ddof=1)
     std_row_mse["Std_MSE_of_run"] = np.std(df_mse["Std_MSE_of_run"].dropna(), ddof=1)
 
     # Add statistics rows
-    df_mse = pd.concat([df_mse, pd.DataFrame([mean_row_mse, std_row_mse])], ignore_index=True)
+    df_mse = pd.concat(
+        [df_mse, pd.DataFrame([mean_row_mse, std_row_mse])], ignore_index=True
+    )
 
     mse_csv = output_folder / "validation_mse_results.csv"
     df_mse.to_csv(mse_csv, index=False)
     print(f"✓ Saved MSE results to: {mse_csv}")
-    
+
     stats_row_mse = {"Run_no": "STATISTICS"}
     for cpt in cpt_columns:
         values = df_mse[cpt].dropna()
@@ -892,7 +920,7 @@ if __name__ == "__main__":
     CPT_DEPTH_PIXELS = mp.CPT_DEPTH_PIXELS
 
     # Validation-specific parameters
-    N_RUNS = 10  # Number of validation runs
+    N_RUNS = 100  # Number of validation runs
     N_REMOVE = 12  # Number of CPTs to remove per run
     BASE_SEED = 20231201  # Random seed for reproducibility (None for random)
 

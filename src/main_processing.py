@@ -32,16 +32,20 @@ logger = None
 # =============================================================================
 # COLOR SCALE CONFIGURATION - Edit these values to change the color boundaries
 # =============================================================================
-# Three-category color scale for IC values:
-# Category 1 (Yellow): IC_MIN to IC_YELLOW_ORANGE_BOUNDARY
-# Category 2 (Orange): IC_YELLOW_ORANGE_BOUNDARY to IC_ORANGE_RED_BOUNDARY
-# Category 3 (Red):    IC_ORANGE_RED_BOUNDARY to IC_MAX
+# Five-category color scale for IC values:
+# Category 1 (Sand - Gold):       IC_MIN to IC_SAND_SANDMIX_BOUNDARY (Ic ≤ 2.05)
+# Category 2 (Sand mix - Orange): IC_SAND_SANDMIX_BOUNDARY to IC_SANDMIX_SILTMIX_BOUNDARY (2.05 < Ic ≤ 2.6)
+# Category 3 (Silt mix - Light Blue): IC_SANDMIX_SILTMIX_BOUNDARY to IC_SILTMIX_CLAY_BOUNDARY (2.6 < Ic ≤ 2.95)
+# Category 4 (Clay - Green):      IC_SILTMIX_CLAY_BOUNDARY to IC_CLAY_ORGANIC_BOUNDARY (2.95 < Ic ≤ 3.6)
+# Category 5 (Organic - Red):     IC_CLAY_ORGANIC_BOUNDARY to IC_MAX (Ic > 3.6)
 # Everything outside IC_MIN to IC_MAX will be black
 
-IC_MIN = 1.3  # Minimum IC value (start of yellow)
-IC_YELLOW_ORANGE_BOUNDARY = 2.0  # Boundary between yellow and orange
-IC_ORANGE_RED_BOUNDARY = 3.4  # Boundary between orange and red
-IC_MAX = 4.2  # Maximum IC value (end of red)
+IC_MIN = 1.0  # Minimum IC value (start of sand)
+IC_SAND_SANDMIX_BOUNDARY = 2.05  # Boundary between sand and sand mix
+IC_SANDMIX_SILTMIX_BOUNDARY = 2.6  # Boundary between sand mix and silt mix
+IC_SILTMIX_CLAY_BOUNDARY = 2.95  # Boundary between silt mix and clay
+IC_CLAY_ORGANIC_BOUNDARY = 3.6  # Boundary between clay and organic
+IC_MAX = 4.5  # Maximum IC value (end of organic)
 # =============================================================================
 
 
@@ -49,12 +53,14 @@ def create_custom_ic_colormap():
     """Create custom segmented colormap for IC values.
 
     Uses the global configuration variables:
-    - IC_MIN: Start of yellow range
-    - IC_YELLOW_ORANGE_BOUNDARY: Yellow to orange transition
-    - IC_ORANGE_RED_BOUNDARY: Orange to red transition
-    - IC_MAX: End of red range
+    - IC_MIN: Start of sand (gold) range
+    - IC_SAND_SANDMIX_BOUNDARY: Sand to sand mix transition
+    - IC_SANDMIX_SILTMIX_BOUNDARY: Sand mix to silt mix transition
+    - IC_SILTMIX_CLAY_BOUNDARY: Silt mix to clay transition
+    - IC_CLAY_ORGANIC_BOUNDARY: Clay to organic transition
+    - IC_MAX: End of organic (red) range
 
-    Returns three-category colormap with sharp boundaries and black for out-of-range values.
+    Returns five-category colormap with sharp boundaries and black for out-of-range values.
     """
     from matplotlib.colors import ListedColormap
     import numpy as np
@@ -62,41 +68,61 @@ def create_custom_ic_colormap():
     # Use global configuration
     vmin = IC_MIN
     vmax = IC_MAX
-    yellow_end = IC_YELLOW_ORANGE_BOUNDARY
-    orange_end = IC_ORANGE_RED_BOUNDARY
+    sand_end = IC_SAND_SANDMIX_BOUNDARY
+    sandmix_end = IC_SANDMIX_SILTMIX_BOUNDARY
+    siltmix_end = IC_SILTMIX_CLAY_BOUNDARY
+    clay_end = IC_CLAY_ORGANIC_BOUNDARY
 
     # Total number of discrete colors
     n_bins = 256
 
     # Proportion of each segment
-    yellow_prop = (yellow_end - vmin) / (vmax - vmin)
-    orange_prop = (orange_end - yellow_end) / (vmax - vmin)
-    red_prop = (vmax - orange_end) / (vmax - vmin)
+    sand_prop = (sand_end - vmin) / (vmax - vmin)
+    sandmix_prop = (sandmix_end - sand_end) / (vmax - vmin)
+    siltmix_prop = (siltmix_end - sandmix_end) / (vmax - vmin)
+    clay_prop = (clay_end - siltmix_end) / (vmax - vmin)
+    organic_prop = (vmax - clay_end) / (vmax - vmin)
 
     # Number of bins for each segment
-    n_yellow = int(n_bins * yellow_prop)
-    n_orange = int(n_bins * orange_prop)
-    n_red = n_bins - n_yellow - n_orange
+    n_sand = int(n_bins * sand_prop)
+    n_sandmix = int(n_bins * sandmix_prop)
+    n_siltmix = int(n_bins * siltmix_prop)
+    n_clay = int(n_bins * clay_prop)
+    n_organic = n_bins - n_sand - n_sandmix - n_siltmix - n_clay
 
-    # Build color array with pure color gradients (no cross-segment blending)
+    # Build color array with uniform, saturated colors for high contrast
+    # Each class uses a single distinct color (no gradients within class)
     color_array = []
 
-    # Yellow segment: dark yellow to bright yellow
-    for i in range(n_yellow):
-        intensity = 0.5 + 0.5 * (i / max(n_yellow - 1, 1))  # 0.5 to 1.0
-        color_array.append([1.0, 1.0, 0.0, intensity])  # Pure yellow with varying alpha
+    # Sand segment: Pure gold (bright and saturated)
+    # RGB for gold: (1.0, 0.843, 0.0)
+    gold_color = [1.0, 0.843, 0.0, 1.0]  # Full opacity, no gradient
+    for i in range(n_sand):
+        color_array.append(gold_color)
 
-    # Orange segment: dark orange to bright orange
-    for i in range(n_orange):
-        intensity = 0.5 + 0.5 * (i / max(n_orange - 1, 1))  # 0.5 to 1.0
-        color_array.append(
-            [1.0, 0.647, 0.0, intensity]
-        )  # Pure orange with varying alpha
+    # Sand mix segment: Pure orange (bright and saturated)
+    # RGB for orange: (1.0, 0.55, 0.0) - slightly more saturated
+    orange_color = [1.0, 0.55, 0.0, 1.0]  # Full opacity, no gradient
+    for i in range(n_sandmix):
+        color_array.append(orange_color)
 
-    # Red segment: dark red to bright red
-    for i in range(n_red):
-        intensity = 0.5 + 0.5 * (i / max(n_red - 1, 1))  # 0.5 to 1.0
-        color_array.append([1.0, 0.0, 0.0, intensity])  # Pure red with varying alpha
+    # Silt mix segment: Bright cyan/light blue (more saturated)
+    # RGB for cyan: (0.0, 0.75, 1.0) - brighter, more saturated blue
+    cyan_color = [0.0, 0.75, 1.0, 1.0]  # Full opacity, no gradient
+    for i in range(n_siltmix):
+        color_array.append(cyan_color)
+
+    # Clay segment: Bright green (saturated)
+    # RGB for green: (0.0, 0.8, 0.0)
+    green_color = [0.0, 0.8, 0.0, 1.0]  # Full opacity, no gradient
+    for i in range(n_clay):
+        color_array.append(green_color)
+
+    # Organic segment: Pure red (bright and saturated)
+    # RGB for red: (1.0, 0.0, 0.0)
+    red_color = [1.0, 0.0, 0.0, 1.0]  # Full opacity, no gradient
+    for i in range(n_organic):
+        color_array.append(red_color)
 
     cmap = ListedColormap(color_array, name="custom_ic")
     cmap.set_under("black")  # Values < vmin
@@ -136,16 +162,15 @@ from utils import setup_experiment
 # Base configuration
 RES_DIR = Path(base_path / "res")  # Base results directory
 REGION = "south"  # Region name for experiment folder and the data subfolder
-EXP_NAME = "exp_14"
+EXP_NAME = "exp_17"
 DESCRIPTION = (
-    "Testing if everything works back to normal??? after trying the elevation from AHN,"
-    "new padding ideas,"
+    "added interactive html plots"
     "new color scale for IC visualization,"
-    "CPT compression to 32,"
-    "3 CPT overlap,"
-    "50% vertical overlap,"
+    "CPT compression to 64,"
+    "2 CPT overlap,"
+    "30% vertical overlap,"
     "10% padding,"
-    "Added boundary enhancement,"
+    "No boundary enhancement,"
     "Added uncertainty quantification with 10 samples,"
 )
 
@@ -173,7 +198,7 @@ CPTS_PER_SECTION = 6  # Number of CPTs per section
 OVERLAP_CPTS = 2  # Number of overlapping CPTs between sections (horizontal)
 
 # Vertical windowing parameters
-VERTICAL_OVERLAP = 50  # [%] Vertical overlap between depth windows (0.0 = no overlap, 50.0 = 50% overlap)
+VERTICAL_OVERLAP = 30  # [%] Vertical overlap between depth windows (0.0 = no overlap, 50.0 = 50% overlap)
 
 # Visualization
 SHOW_CPT_LOCATIONS = True  # Show vertical lines at CPT positions in plots (both individual sections and mosaic)
@@ -662,13 +687,22 @@ def run_schema_generation(
             cbar = plt.colorbar(label="IC Value", extend="both")
             # Set custom ticks at color transition boundaries
             cbar.set_ticks(
-                [IC_MIN, IC_YELLOW_ORANGE_BOUNDARY, IC_ORANGE_RED_BOUNDARY, IC_MAX]
+                [
+                    IC_MIN,
+                    IC_SAND_SANDMIX_BOUNDARY,
+                    IC_SANDMIX_SILTMIX_BOUNDARY,
+                    IC_SILTMIX_CLAY_BOUNDARY,
+                    IC_CLAY_ORGANIC_BOUNDARY,
+                    IC_MAX,
+                ]
             )
             cbar.set_ticklabels(
                 [
                     f"{IC_MIN:g}",
-                    f"{IC_YELLOW_ORANGE_BOUNDARY:g}",
-                    f"{IC_ORANGE_RED_BOUNDARY:g}",
+                    f"{IC_SAND_SANDMIX_BOUNDARY:g}",
+                    f"{IC_SANDMIX_SILTMIX_BOUNDARY:g}",
+                    f"{IC_SILTMIX_CLAY_BOUNDARY:g}",
+                    f"{IC_CLAY_ORGANIC_BOUNDARY:g}",
                     f"{IC_MAX:g}",
                 ]
             )
@@ -723,9 +757,21 @@ def run_schema_generation(
                 f"SchemaGAN Generated Image (Section {sec_index:03d}, Seed: {seed})"
             )
             plt.tight_layout()
-            plt.savefig(output_png, dpi=220, bbox_inches="tight")
+            plt.savefig(output_png, dpi=300, bbox_inches="tight")
             plt.close()
             logger.info(f"[INFO] Created GAN PNG: {output_png.name}")
+
+            # Create interactive HTML for individual sections
+            try:
+                from utils import create_interactive_html
+
+                html_path = output_png.with_suffix(".html")
+                create_interactive_html(
+                    output_png, html_path, title=f"Section {sec_index:03d}"
+                )
+                trace(f"Interactive HTML: {html_path.name}")
+            except Exception:
+                pass  # Silently skip if HTML creation fails
             trace(f"GAN PNG saved: {output_png}")
 
             success_count += 1
@@ -1004,8 +1050,10 @@ def run_mosaic_creation(
         colorbar_label = "IC Value"
         ic_boundaries = (
             IC_MIN,
-            IC_YELLOW_ORANGE_BOUNDARY,
-            IC_ORANGE_RED_BOUNDARY,
+            IC_SAND_SANDMIX_BOUNDARY,
+            IC_SANDMIX_SILTMIX_BOUNDARY,
+            IC_SILTMIX_CLAY_BOUNDARY,
+            IC_CLAY_ORGANIC_BOUNDARY,
             IC_MAX,
         )
 
@@ -1025,6 +1073,28 @@ def run_mosaic_creation(
             colorbar_label=colorbar_label,
             ic_boundaries=ic_boundaries,
         )
+
+        # Create interactive HTML version of the mosaic with proper axes
+        logger.info("Creating interactive HTML viewer...")
+        try:
+            from utils import create_interactive_html
+
+            mosaic_html = mosaic_folder / f"{mosaic_prefix}_mosaic.html"
+            # Set up extent for proper axis scaling: (xmin, xmax, ymin, ymax)
+            # Note: ymin/ymax correspond to depth indices (top to bottom)
+            extent = (xmin, xmax, n_rows_total - 1, 0)
+            create_interactive_html(
+                mosaic_png,
+                mosaic_html,
+                title=f"{mosaic_prefix.replace('_', ' ').title()} Mosaic",
+                extent=extent,
+                xlabel="Distance along line (m)",
+                ylabel="Depth Index",
+            )
+            logger.info(f"Interactive HTML created: {mosaic_html.name}")
+        except Exception as html_err:
+            logger.warning(f"Could not create interactive HTML: {html_err}")
+
     except Exception as e:
         logger.error(f"Failed to plot mosaic: {e}")
         # Restore original values

@@ -383,7 +383,7 @@ def plot_mosaic(
         vmax: Maximum value for colormap (None = auto)
         cmap: Colormap name or object
         colorbar_label: Label for colorbar
-        ic_boundaries: Tuple of (IC_MIN, IC_YELLOW_ORANGE, IC_ORANGE_RED, IC_MAX) for custom ticks
+        ic_boundaries: Tuple of IC class boundaries for custom ticks (e.g., 5-class system)
     """
     import matplotlib.colors as mcolors
 
@@ -480,8 +480,9 @@ def plot_mosaic(
 
     plt.title("SchemaGAN Mosaic (with vertical & horizontal blending)")
     plt.tight_layout()
-    plt.savefig(out_png, dpi=500)
+    plt.savefig(out_png, dpi=800, bbox_inches="tight")
     plt.close()
+    print(f"    High-res mosaic saved (DPI=800): {out_png.name}")
 
 
 # =============================================================================
