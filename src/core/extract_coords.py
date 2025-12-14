@@ -16,7 +16,7 @@ import re
 import numpy as np
 import logging
 from geolib_plus.gef_cpt import GefCpt
-from utils import read_files
+from .utils import read_files
 
 # Get logger for this module
 logger = logging.getLogger(__name__)

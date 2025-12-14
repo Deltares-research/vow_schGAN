@@ -2,6 +2,11 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import sys
+
+# Add parent directory to path for config import
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+import config
 
 # =============================================================================
 # CONFIG
@@ -387,12 +392,8 @@ def plot_mosaic(
     """
     import matplotlib.colors as mcolors
 
-    horiz_m = xmax - xmin
-    vert_m = abs(Y_BOTTOM_M - Y_TOP_M)
-
-    # Adjust figure height to preserve approximate real ratio
-    base_width = 16
-    height = np.clip(base_width * (vert_m / max(horiz_m, 1e-12)), 2, 12)
+    base_width = 20
+    height = base_width / 8 
 
     fig, ax = plt.subplots(figsize=(base_width, height))
 
@@ -428,11 +429,15 @@ def plot_mosaic(
     )
 
     cbar = plt.colorbar(im, label=colorbar_label, extend=extend)
+    cbar.ax.tick_params(labelsize=config.PLOT_FONT_SIZE)
+    cbar.set_label(colorbar_label, fontsize=config.PLOT_FONT_SIZE)
 
     # Set custom ticks at color boundaries if provided
     if ic_boundaries is not None:
         cbar.set_ticks(list(ic_boundaries))
-        cbar.set_ticklabels([f"{val:g}" for val in ic_boundaries])
+        cbar.set_ticklabels(
+            [f"{val:g}" for val in ic_boundaries], fontsize=config.PLOT_FONT_SIZE
+        )
 
     # Add vertical lines at CPT positions if enabled and coords provided
     # Only show CPTs that are within the mosaic extent
@@ -442,8 +447,9 @@ def plot_mosaic(
             if xmin <= cpt_x <= xmax:
                 ax.axvline(x=cpt_x, color="black", linewidth=1, alpha=0.5, zorder=10)
 
-    ax.set_xlabel("Distance along line (m)")
-    ax.set_ylabel("Depth Index (global)")
+    ax.set_xlabel("Distance along line (m)", fontsize=config.PLOT_FONT_SIZE)
+    ax.set_ylabel("Depth Index (global)", fontsize=config.PLOT_FONT_SIZE)
+    ax.tick_params(axis="both", labelsize=config.PLOT_FONT_SIZE)
 
     # Top x-axis: pixels or normalized 0..32
     if not TOP_AXIS_0_TO_32:
@@ -455,7 +461,8 @@ def plot_mosaic(
             return xmin + p * global_dx
 
         top = ax.secondary_xaxis("top", functions=(m_to_px, px_to_m))
-        top.set_xlabel("Pixel index (0…W-1)")
+        top.set_xlabel("Pixel index (0…W-1)", fontsize=config.PLOT_FONT_SIZE)
+        top.tick_params(labelsize=config.PLOT_FONT_SIZE)
     else:
 
         def m_to_u32(x):
@@ -465,7 +472,8 @@ def plot_mosaic(
             return xmin + (u / 32.0) * (xmax - xmin)
 
         top = ax.secondary_xaxis("top", functions=(m_to_u32, u32_to_m))
-        top.set_xlabel("Normalized distance (0…32)")
+        top.set_xlabel("Normalized distance (0…32)", fontsize=config.PLOT_FONT_SIZE)
+        top.tick_params(labelsize=config.PLOT_FONT_SIZE)
 
     # Right y-axis: real depths across the full vertical domain
     def idx_to_m(y_idx):
@@ -476,9 +484,13 @@ def plot_mosaic(
         return 0 if abs(denom) < 1e-12 else (y_m - Y_TOP_M) * (n_rows_total - 1) / denom
 
     right = ax.secondary_yaxis("right", functions=(idx_to_m, m_to_idx))
-    right.set_ylabel("Depth (m)")
+    right.set_ylabel("Depth (m)", fontsize=config.PLOT_FONT_SIZE)
+    right.tick_params(labelsize=config.PLOT_FONT_SIZE)
 
-    plt.title("SchemaGAN Mosaic (with vertical & horizontal blending)")
+    plt.title(
+        "SchemaGAN Mosaic (with vertical & horizontal blending)",
+        fontsize=config.PLOT_FONT_SIZE,
+    )
     plt.tight_layout()
     plt.savefig(out_png, dpi=800, bbox_inches="tight")
     plt.close()

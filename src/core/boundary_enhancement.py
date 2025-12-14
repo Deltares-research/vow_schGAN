@@ -13,6 +13,12 @@ Apply these methods after individual schema generation and before mosaic creatio
 
 import numpy as np
 import logging
+import sys
+from pathlib import Path
+
+# Add parent directory to path for config import
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+import config
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -650,7 +656,7 @@ def create_enhanced_png(
     else:
         title = f"Enhanced Schema (Section {sec_index:03d})"
 
-    plt.title(title)
+    plt.title(title, fontsize=config.PLOT_FONT_SIZE)
     plt.tight_layout()
     plt.savefig(output_png, dpi=300, bbox_inches="tight")
     plt.close()

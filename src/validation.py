@@ -28,6 +28,10 @@ import logging
 import tempfile
 import shutil
 
+# Add parent directory to path for config import
+sys.path.insert(0, str(Path(__file__).parent.parent))
+import config
+
 # Suppress TensorFlow warnings
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 import tensorflow as tf
@@ -38,8 +42,8 @@ sys.path.append(r"D:\GEOLib-Plus")
 
 # Import from main_processing and other modules
 import main_processing as mp
-from utils import IC_normalization, reverse_IC_normalization
-from create_schGAN_input_file import (
+from core.utils import IC_normalization, reverse_IC_normalization
+from core.create_schGAN_input_file import (
     split_cpt_into_windows,
     process_sections,
     validate_input_files,
@@ -372,6 +376,8 @@ def run_validation(
                         extent=[x0, x1, n_rows - 1, 0],
                     )
                     cbar = plt.colorbar(label="IC Value", extend="both")
+                    cbar.ax.tick_params(labelsize=config.PLOT_FONT_SIZE)
+                    cbar.set_label("IC Value", fontsize=config.PLOT_FONT_SIZE)
                     cbar.set_ticks(
                         [
                             mp.IC_MIN,
@@ -390,12 +396,16 @@ def run_validation(
                             f"{mp.IC_SILTMIX_CLAY_BOUNDARY:g}",
                             f"{mp.IC_CLAY_ORGANIC_BOUNDARY:g}",
                             f"{mp.IC_MAX:g}",
-                        ]
+                        ],
+                        fontsize=config.PLOT_FONT_SIZE,
                     )
 
                     ax = plt.gca()
-                    ax.set_xlabel("Distance along line (m)")
-                    ax.set_ylabel("Depth Index")
+                    ax.set_xlabel(
+                        "Distance along line (m)", fontsize=config.PLOT_FONT_SIZE
+                    )
+                    ax.set_ylabel("Depth Index", fontsize=config.PLOT_FONT_SIZE)
+                    ax.tick_params(axis="both", labelsize=config.PLOT_FONT_SIZE)
                     ax.set_xlim(x0, x1)
 
                     # Top x-axis: pixel index
@@ -476,7 +486,8 @@ def run_validation(
 
                     section_idx = section_info["section_index"]
                     plt.title(
-                        f"Validation - Section {section_idx:03d}, Depth Window {w_idx}"
+                        f"Validation - Section {section_idx:03d}, Depth Window {w_idx}",
+                        fontsize=config.PLOT_FONT_SIZE,
                     )
                     plt.tight_layout()
                     plt.savefig(output_png, dpi=220, bbox_inches="tight")
@@ -920,7 +931,7 @@ if __name__ == "__main__":
     CPT_DEPTH_PIXELS = mp.CPT_DEPTH_PIXELS
 
     # Validation-specific parameters
-    N_RUNS = 100  # Number of validation runs
+    N_RUNS = 10  # Number of validation runs
     N_REMOVE = 12  # Number of CPTs to remove per run
     BASE_SEED = 20231201  # Random seed for reproducibility (None for random)
 

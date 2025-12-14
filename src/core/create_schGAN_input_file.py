@@ -22,7 +22,7 @@ import numpy as np
 import pandas as pd
 import logging
 
-from utils import (
+from .utils import (
     euclid,
 )  # def euclid(x1: float, y1: float, x2: float, y2: float) -> float
 

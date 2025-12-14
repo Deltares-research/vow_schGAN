@@ -8,8 +8,12 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 
-from utils import read_files
+from .utils import read_files
 from pathlib import Path
+
+# Add parent directory to path for config import
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+import config
 
 # Add your local GEOLib-Plus path
 sys.path.append(r"D:\GEOLib-Plus")
@@ -420,7 +424,9 @@ def plot_equalized_depth_cpts(
     data_cpts_32px = data_cpts_32px[:num_to_plot]
 
     fig, axs = plt.subplots(3, num_to_plot, figsize=(16, 8), sharex=True, sharey=False)
-    fig.suptitle("CPT Data Before and After Depth Equalization", fontsize=10)
+    fig.suptitle(
+        "CPT Data Before and After Depth Equalization", fontsize=config.PLOT_FONT_SIZE
+    )
 
     for i in range(num_to_plot):
         # Plot individual CPT in the top row (before equalization)
@@ -437,8 +443,8 @@ def plot_equalized_depth_cpts(
         )
         # axs[0, i].invert_yaxis()  # Depth increases downward
         axs[0, i].set_title(f"CPT-{i + 1}")
-        axs[0, i].tick_params(axis="x", labelsize=8)
-        axs[0, i].tick_params(axis="y", labelsize=8)
+        axs[0, i].tick_params(axis="x", labelsize=config.PLOT_FONT_SIZE)
+        axs[0, i].tick_params(axis="y", labelsize=config.PLOT_FONT_SIZE)
         # add gridlines
         axs[0, i].grid(True, linewidth=0.5, alpha=0.7)
 
@@ -455,8 +461,8 @@ def plot_equalized_depth_cpts(
             lowest_min_depth, color="r", linestyle="dotted", label="Lowest Max Depth"
         )
         # axs[1, i].invert_yaxis()  # Depth increases downward
-        axs[1, i].tick_params(axis="x", labelsize=8)
-        axs[1, i].tick_params(axis="y", labelsize=8)
+        axs[1, i].tick_params(axis="x", labelsize=config.PLOT_FONT_SIZE)
+        axs[1, i].tick_params(axis="y", labelsize=config.PLOT_FONT_SIZE)
         # add gridlines
         axs[1, i].grid(True, linewidth=0.5, alpha=0.7)
 
@@ -467,18 +473,18 @@ def plot_equalized_depth_cpts(
             label="Equalized Bottom",
         )
         axs[2, i].invert_yaxis()  # Depth increases downward
-        axs[2, i].tick_params(axis="x", labelsize=8)
-        axs[2, i].tick_params(axis="y", labelsize=8)
+        axs[2, i].tick_params(axis="x", labelsize=config.PLOT_FONT_SIZE)
+        axs[2, i].tick_params(axis="y", labelsize=config.PLOT_FONT_SIZE)
         # add gridlines
         axs[2, i].grid(True, linewidth=0.5, alpha=0.7)
 
     # Add labels for rows
-    axs[0, 0].set_ylabel("Depth (Before)", fontsize=10)
-    axs[1, 0].set_ylabel("Depth (Equalized Top)", fontsize=10)
-    axs[2, 0].set_ylabel("Depth (Equalized Bottom)", fontsize=10)
+    axs[0, 0].set_ylabel("Depth (Before)", fontsize=config.PLOT_FONT_SIZE)
+    axs[1, 0].set_ylabel("Depth (Equalized Top)", fontsize=config.PLOT_FONT_SIZE)
+    axs[2, 0].set_ylabel("Depth (Equalized Bottom)", fontsize=config.PLOT_FONT_SIZE)
 
     # Set common x-axis label
-    fig.supxlabel("IC", fontsize=10)
+    fig.supxlabel("IC", fontsize=config.PLOT_FONT_SIZE)
 
     # Adjust spacing
     plt.tight_layout(rect=[0, 0, 1, 0.95])
@@ -527,7 +533,7 @@ def plot_compression_results(equalized_cpts, compressed_cpts, num_to_plot=10):
 
         # Formatting
         ax.invert_yaxis()  # Depth increases downward
-        ax.set_title(f"CPT-{str(eq_cpt['Name'])[-5:]}", fontsize=10)
+        ax.set_title(f"CPT-{str(eq_cpt['Name'])[-5:]}", fontsize=config.PLOT_FONT_SIZE)
         if i % cols == 0:
             ax.set_ylabel("Depth (m)")
 

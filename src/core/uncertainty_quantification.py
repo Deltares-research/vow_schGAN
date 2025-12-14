@@ -17,6 +17,13 @@ Low uncertainty appears:
 - Where patterns are clear and consistent
 """
 
+import sys
+from pathlib import Path
+
+# Add parent directory to path for config import
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+import config
+
 import numpy as np
 import pandas as pd
 import logging
@@ -133,7 +140,7 @@ def visualize_uncertainty(
 
     # Create 2-row plot if mean_prediction provided, otherwise single plot
     if mean_prediction is not None:
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 4.8), sharex=True)
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 7), sharex=True)
         axes = [ax1, ax2]
 
         # Top plot: Mean prediction
@@ -167,7 +174,7 @@ def visualize_uncertainty(
         ax_main = ax2
     else:
         # Single plot: uncertainty only
-        fig, ax_main = plt.subplots(figsize=(10, 2.4))
+        fig, ax_main = plt.subplots(figsize=(15, 4))
         axes = [ax_main]
 
         im = ax_main.imshow(
@@ -342,7 +349,8 @@ def create_uncertainty_mosaic(
     mosaic_png = output_folder / "uncertainty_mosaic.png"
 
     SIZE_Y, SIZE_X = mosaic.shape
-    fig, ax = plt.subplots(figsize=(16, 4))
+    # Use same aspect ratio as individual GAN images (16:3.84 maintains 4.17:1)
+    fig, ax = plt.subplots(figsize=(16, 3.84))
 
     im = ax.imshow(
         mosaic,
@@ -385,7 +393,7 @@ def create_uncertainty_mosaic(
                 x=cpt_x, color="cyan", linewidth=1, linestyle="--", alpha=0.6, zorder=10
             )
 
-    plt.title("Uncertainty Mosaic (MC Dropout)")
+    plt.title("Uncertainty Mosaic (MC Dropout)", fontsize=config.PLOT_FONT_SIZE)
     plt.tight_layout()
     plt.savefig(mosaic_png, dpi=800, bbox_inches="tight")
     plt.close()

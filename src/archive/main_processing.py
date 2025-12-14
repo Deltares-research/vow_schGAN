@@ -198,7 +198,7 @@ CPTS_PER_SECTION = 6  # Number of CPTs per section
 OVERLAP_CPTS = 2  # Number of overlapping CPTs between sections (horizontal)
 
 # Vertical windowing parameters
-VERTICAL_OVERLAP = 30  # [%] Vertical overlap between depth windows (0.0 = no overlap, 50.0 = 50% overlap)
+VERTICAL_OVERLAP = 50  # [%] Vertical overlap between depth windows (0.0 = no overlap, 50.0 = 50% overlap)
 
 # Visualization
 SHOW_CPT_LOCATIONS = True  # Show vertical lines at CPT positions in plots (both individual sections and mosaic)
@@ -215,7 +215,7 @@ ENHANCE_METHOD = "none"  # Enhancement method to sharpen layer boundaries
 # Uncertainty Quantification (Monte Carlo Dropout)
 COMPUTE_UNCERTAINTY = True  # Compute prediction uncertainty using MC Dropout
 N_MC_SAMPLES = (
-    10  # Number of MC Dropout samples (20-100 typical, more = slower but more accurate)
+    5  # Number of MC Dropout samples (20-100 typical, more = slower but more accurate)
 )
 # MC Dropout reveals where the GAN is uncertain in its predictions:
 #   - High uncertainty: complex transitions, far from data, ambiguous interpolations

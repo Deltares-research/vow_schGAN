@@ -3,6 +3,9 @@ import os
 import math
 from pathlib import Path
 
+# Add parent directory to path for config import
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+import config
 
 # Add your local GEOLib-Plus path
 sys.path.append(r"D:\GEOLib-Plus")
@@ -124,16 +127,16 @@ def save_coords_csv(data, output_file, show_plot=False):
                 coordinates_array[i, 0],
                 coordinates_array[i, 1],
                 name,
-                fontsize=8,
+                fontsize=config.PLOT_FONT_SIZE,
                 ha="right",
                 va="bottom",
             )
 
-        plt.title("CPT Locations with Names")
-        plt.xlabel("X Coordinate")
-        plt.ylabel("Y Coordinate")
+        plt.title("CPT Locations with Names", fontsize=config.PLOT_FONT_SIZE)
+        plt.xlabel("X Coordinate", fontsize=config.PLOT_FONT_SIZE)
+        plt.ylabel("Y Coordinate", fontsize=config.PLOT_FONT_SIZE)
         plt.grid(True)
-        plt.legend()
+        plt.legend(fontsize=config.PLOT_FONT_SIZE)
         plt.show()
         plt.clf()
 
