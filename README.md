@@ -4,7 +4,7 @@ Automated workflow for generating geotechnical subsurface schematics from CPT da
 
 ---
 
-## 🎯 What It Does
+## What It Does
 
 Transforms raw CPT (`.gef`) files into detailed subsurface cross-sections:
 
@@ -22,15 +22,15 @@ Transforms raw CPT (`.gef`) files into detailed subsurface cross-sections:
 9. **Validation** - Cross-validation metrics (optional)
 
 ### Key Features
-- 🎛️ **Control every step** - Enable/disable via config flags
-- ⚙️ **One config file** - All settings in `config.py`
-- 📊 **Interactive outputs** - Zoomable HTML visualizations
-- 🔬 **Statistical validation** - Leave-out cross-validation
-- 📈 **Uncertainty maps** - Know where predictions are reliable
+- **Control every step** - Enable/disable via config flags
+- **One config file** - All settings in `config.py`
+- **Interactive outputs** - Zoomable HTML visualizations
+- **Statistical validation** - Leave-out cross-validation
+- **Uncertainty maps** - Know where predictions are reliable
 
 ---
 
-## 📋 Requirements
+## Requirements
 
 - **Python 3.10+**
 - **GEOLib-Plus** - For CPT interpretation
@@ -39,15 +39,12 @@ Transforms raw CPT (`.gef`) files into detailed subsurface cross-sections:
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
-### 1. Setup Environment
+### 1. Install
 
 ```bash
 # Create virtual environment
-py -3.10 -m venv .venv
-Install
-```bash
 py -3.10 -m venv .venv
 .\.venv\Scripts\activate
 pip install -r requirements.txt
@@ -152,13 +149,13 @@ C:\VOW\res\<region>\<exp_name>\
 - **Step 9:** `validation.run_validation_pipeline()` - Optional cross-validation
 
 **Key Features:**
-- Each Project Structure
+## Project Structure
 
 ```
 vow_schGAN/
-├── config.py                    # ⭐ Edit this for all settings
+├── config.py                    # Edit this for all settings
 ├── src/
-│   ├── main_processing_refactored.py  # ⭐ Run this
+│   ├── main_processing_refactored.py  # Run this
 │   ├── core/                    # Core implementations
 │   ├── modules/                 # Pipeline wrappers
 │   │   ├── preprocessing/
@@ -201,7 +198,7 @@ run_data_compression(
 1. **Interpret CPTs** using GEOLib-Plus Robertson method
    - Calculates soil behavior index (IC)
    - Applies unit weight calculations
-2. ⚙️ Configuration
+2. ## Configuration
 
 All settings in **`config.py`**:
 
@@ -232,7 +229,15 @@ PLOT_FONT_SIZE = 8                 # Font size for all plots
 ASPECT_RATIO_WIDTH_HEIGHT = 4.17   # Plot dimensions
 ```
 
-See `config.py` for all options.heck GEF file structure
+See `config.py` for all options.
+
+---
+
+## Common Issues
+
+| Problem | Solution |
+|---------|----------|
+| "No coordinates found" | Check GEF file structure
 - Verify coordinates exist in source data
 - Manually add coordinates if needed
 
@@ -287,7 +292,7 @@ SCHGAN_MODEL_PATH = Path(r"D:\schemaGAN\h5\schemaGAN.h5")  # Update this
 
 ---
 
-## 📊 Understanding the Outputs
+## Understanding Results
 
 ### IC (Soil Behavior Index) Scale
 
@@ -307,7 +312,7 @@ SCHGAN_MODEL_PATH = Path(r"D:\schemaGAN\h5\schemaGAN.h5")  # Update this
 
 ---
 
-## 🔬 Advanced Usage
+## Advanced Usage
 
 ### Running Specific Steps Only
 
@@ -319,9 +324,9 @@ RUN_STEP_1_FOLDERS = False    # Skip folder setup
 RUN_STEP_2_COORDS = False     # Skip coordinate extraction
 RUN_STEP_3_COMPRESS = False   # Skip data processing
 RUN_STEP_4_SECTIONS = False   # Skip section creation
-RUN_STEP_5_GAN = True         # ✅ Run GAN generation
+RUN_STEP_5_GAN = True         # Run GAN generation
 RUN_STEP_6_ENHANCE = False    # Skip enhancement
-RUN_STEP_7_MOSAIC = True      # ✅ Run mosaic creation
+RUN_STEP_7_MOSAIC = True      # Run mosaic creation
 RUN_STEP_8_UNCERTAINTY = False
 RUN_STEP_9_VALIDATION = False
 ```
@@ -390,17 +395,17 @@ VALIDATION_N_REMOVE = 12       # CPTs to remove per run
 
 ---
 
-## 📁 Repository Structure
+## Repository Structure
 
 ```
 vow_schGAN/
 │
-├── config.py                               # ⭐ Central configuration file
+├── config.py                               # Central configuration file
 ├── requirements.txt                         # Python dependencies
 ├── README.md                                # This file
 │
 ├── src/
-│   ├── main_processing_refactored.py       # ⭐ Main pipeline orchestrator
+│   ├── main_processing_refactored.py       # Main pipeline orchestrator
 │   │
 │   ├── core/                               # Core implementations
 │   │   ├── extract_coords.py               # Coordinate extraction logic
@@ -448,7 +453,7 @@ vow_schGAN/
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 ### Code Style
 - Use descriptive variable names
@@ -464,7 +469,7 @@ vow_schGAN/
 
 ---
 
-## 🎨 Visualization Features
+## Visualization Features
 
 ### Unified Styling
 All plots follow consistent design:
@@ -490,7 +495,7 @@ Five distinct colors for soil types:
 
 ---
 
-## 🧪 Testing & Validation
+## Testing and Validation
 
 ### Built-in Validation
 Step 9 provides comprehensive model validation:
@@ -498,7 +503,7 @@ Step 9 provides comprehensive model validation:
 **Method:** Leave-out cross-validation
 - Randomly removes N CPTs (e.g., 12)
 - Generates schema without those CPTs
-� Understanding Results
+## Understanding Results
 
 ### IC Scale (Robertson 1990)
 - **IC < 2.05** - Sand (yellow/orange in plots)
@@ -518,7 +523,7 @@ MSE: 0.22 ± 0.03  # Squared error
 
 ---
 
-## 🐛 Common Issues
+## Common Issues
 
 | Problem | Solution |
 |---------|----------|
@@ -540,13 +545,15 @@ VALIDATION_N_RUNS = 10        # ~10-15 min per run
 ```
 
 ### Legacy Scripts
-Original monolithic scripts available in `src/archive/` (require editing hardcoded paths---
+Original monolithic scripts available in `src/archive/` (require editing hardcoded paths)
 
-## 📧 Contact
+---
+
+## Contact
 
 **Author:** Fabian Campos (fabian.campos@deltares.nl)  
 **Project:** VOW - Geotechnical Subsurface Modeling  
 **License:** Deltares © 2024-2025
 
 **Version:** 2.0 (December 2025)  
-**Python:** 3.10+ | **Dependencies:** TensorFlow 2.8+, GEOLib-Plu
+**Python:** 3.10+ | **Dependencies:** TensorFlow 2.8+, GEOLib-Plus
