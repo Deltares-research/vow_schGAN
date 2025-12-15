@@ -428,6 +428,24 @@ def main():
         logger.info("Step 8: Skipped (RUN_STEP_8_VALIDATION = False)")
 
     # =============================================================================
+    # 9. STRUCTURAL UNCERTAINTY (OPTIONAL)
+    # =============================================================================
+    if config.RUN_STEP_9_STRUCT_UNCERT:
+        logger.info("=" * 60)
+        logger.info("Step 9: Computing structural uncertainty...")
+
+        try:
+            # TODO: Implement structural uncertainty computation
+            # This step will analyze uncertainty due to structural/geological variability
+            logger.info("Structural uncertainty computation not yet implemented.")
+            logger.info(f"Output folder: {folders['9_struct_uncert']}")
+        except Exception as e:
+            logger.error(f"Failed to compute structural uncertainty: {e}")
+    else:
+        logger.info("=" * 60)
+        logger.info("Step 9: Skipped (RUN_STEP_9_STRUCT_UNCERT = False)")
+
+    # =============================================================================
     # COMPLETION
     # =============================================================================
     logger.info("=" * 60)

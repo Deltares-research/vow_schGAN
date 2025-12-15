@@ -140,6 +140,133 @@ def select_cpts_to_remove(
     return [cpt_names[i] for i in selected_indices]
 
 
+def create_cpt_comparison_plots(
+    removed_cpts: List[str],
+    cpt_df_full: pd.DataFrame,
+    mae_by_cpt_by_window: Dict[str, List],
+    mse_by_cpt_by_window: Dict[str, List],
+    pred_profiles_by_cpt: Dict[str, np.ndarray],
+    output_folder: Path,
+    y_top_m: float,
+    y_bottom_m: float,
+):
+    """
+    Create a 2x6 grid comparing real vs predicted CPT profiles for removed CPTs.
+
+    Args:
+        removed_cpts: List of removed CPT names
+        cpt_df_full: Full compressed CPT dataframe with all CPTs
+        mae_by_cpt_by_window: Dictionary of MAE values per CPT per window
+        mse_by_cpt_by_window: Dictionary of MSE values per CPT per window
+        pred_profiles_by_cpt: Dictionary mapping CPT name to predicted IC profile
+        output_folder: Folder to save the plot
+        y_top_m: Top depth in meters
+        y_bottom_m: Bottom depth in meters
+    """
+    n_cpts = len(removed_cpts)
+    if n_cpts == 0:
+        return
+
+    # Create figure with 2 rows, 6 columns
+    fig, axes = plt.subplots(2, 6, figsize=(18, 8))
+    axes = axes.flatten()
+
+    # Create depth array
+    n_depths = len(cpt_df_full)
+    depth_indices = np.arange(n_depths)
+    depth_meters = np.linspace(y_top_m, y_bottom_m, n_depths)
+
+    for i, cpt_name in enumerate(removed_cpts):
+        if i >= 12:  # Only plot first 12
+            break
+
+        ax = axes[i]
+
+        # Get real CPT profile
+        if cpt_name in cpt_df_full.columns:
+            real_profile = cpt_df_full[cpt_name].values
+        else:
+            real_profile = np.zeros(n_depths)
+
+        # Get predicted profile
+        if cpt_name in pred_profiles_by_cpt:
+            pred_profile = pred_profiles_by_cpt[cpt_name]
+        else:
+            pred_profile = np.zeros(n_depths)
+
+        # Find where real data ends (last non-zero value) for this CPT
+        # CPTs that didn't penetrate deep will have zeros at the bottom
+        nonzero_mask = real_profile > 0
+        if np.any(nonzero_mask):
+            nonzero_indices = np.where(nonzero_mask)[0]
+            first_data_idx = nonzero_indices[0]
+            last_data_idx = nonzero_indices[-1]
+
+            y_min_plot = depth_meters[first_data_idx]  # Surface (positive)
+            y_max_plot = depth_meters[last_data_idx]  # Actual penetration (negative)
+
+            # Add small margin for visibility
+            depth_range = abs(y_min_plot - y_max_plot)
+            if depth_range > 0:
+                margin = depth_range * 0.05
+                y_min_plot = y_min_plot + margin
+                y_max_plot = y_max_plot - margin
+        else:
+            # Fallback: use full range if no data
+            y_min_plot = y_top_m
+            y_max_plot = y_bottom_m
+
+        # Plot profiles (IC on x-axis, depth on y-axis)
+        # depth_meters goes from positive (surface) to negative (deep)
+        # matplotlib will naturally put larger values (surface) at top
+        ax.plot(real_profile, depth_meters, "b-", linewidth=1.5, label="Real CPT")
+        ax.plot(pred_profile, depth_meters, "r--", linewidth=1.5, label="Predicted")
+
+        # Set y-limits: surface (larger, positive) to deep (smaller, negative)
+        # This puts surface at top, deep at bottom - NO invert needed
+        ax.set_ylim(y_max_plot, y_min_plot)
+
+        # Labels and title
+        ax.set_xlabel("IC", fontsize=config.PLOT_FONT_SIZE)
+        if i % 6 == 0:  # Only leftmost plots
+            ax.set_ylabel("Depth (m)", fontsize=config.PLOT_FONT_SIZE)
+
+        # Compute average MAE/MSE for this CPT
+        mae_vals = mae_by_cpt_by_window.get(cpt_name, [])
+        mse_vals = mse_by_cpt_by_window.get(cpt_name, [])
+        avg_mae = np.mean(mae_vals) if mae_vals else np.nan
+        avg_mse = np.mean(mse_vals) if mse_vals else np.nan
+
+        ax.set_title(
+            f"{cpt_name}\nMAE:{avg_mae:.3f} MSE:{avg_mse:.3f}",
+            fontsize=config.PLOT_FONT_SIZE,
+        )
+        ax.tick_params(axis="both", labelsize=config.PLOT_FONT_SIZE - 1)
+        ax.grid(True, alpha=0.3, linewidth=0.5)
+        ax.set_xlim(0, 4.5)
+
+        # Add legend only to first subplot
+        if i == 0:
+            ax.legend(fontsize=config.PLOT_FONT_SIZE - 1, loc="best")
+
+    # Hide unused subplots
+    for i in range(n_cpts, 12):
+        axes[i].axis("off")
+
+    plt.suptitle(
+        "CPT Comparison: Real vs Predicted",
+        fontsize=config.PLOT_FONT_SIZE + 2,
+        fontweight="bold",
+    )
+    plt.tight_layout(rect=[0, 0, 1, 0.97])
+
+    output_png = output_folder / "cpt_comparison.png"
+    plt.savefig(output_png, dpi=300, bbox_inches="tight")
+    plt.close()
+
+    print(f"  ✓ Saved CPT comparison plot: {output_png.name}")
+
+
 def run_validation(
     compressed_csv: Path,
     coords_csv: Path,
@@ -265,6 +392,10 @@ def run_validation(
         # Store predictions at removed CPT locations for each depth window
         mae_by_cpt_by_window = {cpt: [] for cpt in removed_cpts}
         mse_by_cpt_by_window = {cpt: [] for cpt in removed_cpts}
+
+        # Store predicted profiles for comparison plots
+        pred_profiles_by_cpt = {cpt: np.zeros(total_cpt_rows) for cpt in removed_cpts}
+        pred_counts_by_cpt = {cpt: np.zeros(total_cpt_rows) for cpt in removed_cpts}
 
         # Collect all manifests from all depth windows
         all_manifests = []
@@ -516,8 +647,11 @@ def run_validation(
                     # Check if this CPT falls within the section's extent
                     if start_m <= cpt_m <= start_m + total_span_m:
                         # Calculate pixel position within section
+                        # IMPORTANT: Must use np.rint() to match section creation logic
                         relative_m = cpt_m - start_m
-                        pixel_position = int((relative_m / total_span_m) * (n_cols - 1))
+                        pixel_position = int(
+                            np.rint((relative_m / total_span_m) * (n_cols - 1))
+                        )
                         pixel_position = np.clip(pixel_position, 0, n_cols - 1)
 
                         # Extract prediction at this position
@@ -527,6 +661,10 @@ def run_validation(
                         y_true = cpt_df_full.iloc[
                             start_row:end_row, cpt_df_full.columns.get_loc(cpt)
                         ].values
+
+                        # Store predicted profile for comparison plots
+                        pred_profiles_by_cpt[cpt][start_row:end_row] += y_pred
+                        pred_counts_by_cpt[cpt][start_row:end_row] += 1
 
                         # Calculate metrics
                         mae = mean_absolute_error(y_true, y_pred)
@@ -548,6 +686,31 @@ def run_validation(
                 mae_results[cpt] = np.nan
                 mse_results[cpt] = np.nan
                 print(f"      WARNING: CPT {cpt} not found in any section!")
+
+        # Average predicted profiles where multiple windows overlap
+        for cpt in removed_cpts:
+            mask = pred_counts_by_cpt[cpt] > 0
+            pred_profiles_by_cpt[cpt][mask] /= pred_counts_by_cpt[cpt][mask]
+
+        # Create CPT comparison plots
+        if save_images and images_folder is not None:
+            print("  Creating CPT comparison plots...")
+            try:
+                create_cpt_comparison_plots(
+                    removed_cpts=removed_cpts,
+                    cpt_df_full=cpt_df_full,
+                    mae_by_cpt_by_window=mae_by_cpt_by_window,
+                    mse_by_cpt_by_window=mse_by_cpt_by_window,
+                    pred_profiles_by_cpt=pred_profiles_by_cpt,
+                    output_folder=images_folder,
+                    y_top_m=y_top_m,
+                    y_bottom_m=y_bottom_m,
+                )
+            except Exception as e:
+                print(f"      Warning: Failed to create comparison plots: {e}")
+                import traceback
+
+                traceback.print_exc()
 
         # Save combined manifest for mosaic creation
         if all_manifests:
