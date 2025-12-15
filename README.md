@@ -1,40 +1,41 @@
 # VOW SchemaGAN Pipeline
 
-A complete automated workflow for preparing Cone Penetration Test (CPT) data and generating geotechnical subsurface schematics using **SchemaGAN**, a generative adversarial network trained for soil schematization in the **VOW project**.
+Automated workflow for generating geotechnical subsurface schematics from CPT data using SchemaGAN.
 
 ---
 
-## 🎯 Overview
+## 🎯 What It Does
 
-This pipeline transforms raw CPT data (`.gef` files) into detailed subsurface cross-sections through a 6-step automated process:
+Transforms raw CPT (`.gef`) files into detailed subsurface cross-sections:
 
-1. **Folder Setup** - Creates organized experiment directory structure
-2. **Coordinate Extraction** - Validates and extracts CPT locations
-3. **Data Processing** - Interprets CPT data and compresses to 32-pixel depth profiles
-4. **Section Creation** - Generates overlapping spatial sections ready for GAN input
-5. **Schema Generation** - Uses trained SchemaGAN model to create detailed schematics
-6. **Mosaic Assembly** - Combines all sections into a complete subsurface visualization
+**Raw CPT Data** → **Interpreted Soil Profiles** → **GAN-Generated Schemas** → **Complete Mosaic**
 
-**Key Features:**
-- ✅ Fully automated end-to-end pipeline (`main_processing.py`)
-- ✅ Comprehensive logging saved with each experiment
-- ✅ Handles coordinate validation and correction for Netherlands RD system
-- ✅ Configurable sectioning with overlap for seamless mosaics
-- ✅ Individual scripts can be run standalone for debugging
+### Pipeline Steps
+1. **Setup** - Create folder structure
+2. **Coordinates** - Extract & validate CPT locations
+3. **Compression** - Process CPT data to 64-pixel depth
+4. **Sections** - Create overlapping spatial sections
+5. **GAN** - Generate detailed schemas
+6. **Enhancement** - Sharpen layer boundaries
+7. **Mosaic** - Combine into seamless visualization
+8. **Uncertainty** - Quantify prediction variance
+9. **Validation** - Cross-validation metrics (optional)
+
+### Key Features
+- 🎛️ **Control every step** - Enable/disable via config flags
+- ⚙️ **One config file** - All settings in `config.py`
+- 📊 **Interactive outputs** - Zoomable HTML visualizations
+- 🔬 **Statistical validation** - Leave-out cross-validation
+- 📈 **Uncertainty maps** - Know where predictions are reliable
 
 ---
 
-## 📋 Prerequisites
+## 📋 Requirements
 
-### Required Software
-- **Python 3.10** (recommended)
-- **GEOLib-Plus** - Local installation required for CPT interpretation
-  - Path must be added in scripts: `D:\GEOLib-Plus` (configurable)
-- **Trained SchemaGAN Model** - `.h5` file for schema generation
-
-### Required Data
-- CPT data files in **GEF format** (`.gef`)
-- Coordinates should be in **Netherlands RD coordinate system**
+- **Python 3.10+**
+- **GEOLib-Plus** - For CPT interpretation
+- **SchemaGAN model** - Trained `.h5` file
+- **CPT data** - `.gef` files with Netherlands RD coordinates
 
 ---
 
@@ -45,130 +46,131 @@ This pipeline transforms raw CPT data (`.gef` files) into detailed subsurface cr
 ```bash
 # Create virtual environment
 py -3.10 -m venv .venv
-
-# Activate (Windows)
+Install
+```bash
+py -3.10 -m venv .venv
 .\.venv\Scripts\activate
-
-# Upgrade pip and install dependencies
-python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-### 2. Configure Your Experiment
-
-Edit `src/main_processing.py` - **CONFIG section** (lines 40-65):
-
+### 2. Configure
+Edit **`config.py`**:
 ```python
-# Base configuration
-RES_DIR = Path(r"C:\VOW\res")          # Where results will be saved
-REGION = "north"                        # Region name (north/south/etc.)
-EXP_NAME = "exp_1"                      # Experiment identifier
-DESCRIPTION = "Baseline with 6 CPTs"   # Optional description
-
-# Input paths
-CPT_FOLDER = Path(r"C:\VOW\data\cpts\your_data_folder")
+# Paths
+CPT_FOLDER = Path(r"C:\VOW\data\cpts")
 SCHGAN_MODEL_PATH = Path(r"D:\schemaGAN\h5\schemaGAN.h5")
+RES_DIR = Path(r"C:\VOW\res")
 
-# Processing parameters
-COMPRESSION_METHOD = "mean"             # "mean" or "max" for IC compression
-N_COLS = 512                            # Width of output sections (pixels)
-N_ROWS = 32                             # Depth levels (pixels)
-CPTS_PER_SECTION = 6                    # CPTs in each section
-OVERLAP_CPTS = 2                        # Overlap between sections
-LEFT_PAD_FRACTION = 0.10                # Padding fractions
-RIGHT_PAD_FRACTION = 0.10
-DIR_FROM, DIR_TO = "west", "east"       # Sorting direction
-
-# Optional: depth range (auto-computed if None)
-Y_TOP_M = None
-Y_BOTTOM_M = None
+# Enable/disable steps
+RUN_STEP_5_GAN = True
+RUN_STEP_9_VALIDATION = False  # Optional, time-consuming
 ```
 
-### 3. Run the Complete Pipeline
-
+### 3. Run
 ```bash
-python src/main_processing.py
+python src/main_processing_refactored.py
 ```
 
-**Output Structure:**
-```
-C:\VOW\res\north\exp_1\
-├── pipeline.log                  # Complete execution log
-├── README.txt                    # Experiment metadata
+Results saved to: `C:\VOW\res\<region>\<exp_name>\`
+├── README.txt                            # Experiment metadata
 ├── 1_coords\
-│   └── cpt_coordinates.csv      # Validated coordinates
+│   └── cpt_coordinates.csv              # Validated coordinates
 ├── 2_compressed_cpt\
-│   └── compressed_cpt_data_mean.csv  # 32-row IC profiles
+│   └── compressed_cpt_data_mean_64px.csv  # 64-row IC profiles
 ├── 3_sections\
-│   ├── section_01_cpts_XXX_to_YYY.csv  # Individual sections
-│   ├── manifest_sections.csv          # Section metadata
-│   └── cpt_coords_with_distances.csv  # Spatial distances
+│   ├── section_01_z_00_cpts_XXX_to_YYY.csv  # Individual sections
+│   ├── manifest_sections.csv               # Section metadata
+│   └── cpt_coords_with_distances.csv       # Spatial distances
 ├── 4_gan_images\
-│   ├── section_01_..._gan.csv         # Generated schemas (data)
-│   └── section_01_..._gan.png         # Generated schemas (images)
-└── 5_mosaic\
-    ├── schemaGAN_mosaic.csv           # Combined mosaic (data)
-    └── schemaGAN_mosaic.png           # Final visualization
+│   ├── section_01_z_00_..._gan.csv         # Generated schemas (data)
+│   ├── section_01_z_00_..._gan.png         # Generated schemas (images)
+│   └── section_01_z_00_..._gan.html        # Interactive viewers
+├── 5_enhance\
+│   ├── section_01_z_00_..._enhanced.csv    # Enhanced schemas
+│   └── section_01_z_00_..._enhanced.png    # Enhanced visualizations
+├── 6_mosaic\
+│   ├── schemaGAN_mosaic.csv                # Combined mosaic (data)
+│   ├── schemaGAN_mosaic.png                # Mosaic visualization
+│   ├── schemaGAN_mosaic.html               # Interactive mosaic
+│   ├── enhanced_mosaic.csv                 # Enhanced mosaic (data)
+│   ├── enhanced_mosaic.png                 # Enhanced mosaic visualization
+│   └── enhanced_mosaic.html                # Interactive enhanced mosaic
+├── 7_model_uncert\
+│   ├── section_01_z_00_..._uncert.csv      # Uncertainty maps
+│   ├── section_01_z_00_..._uncert.png      # Uncertainty visualizations
+│   ├── uncertainty_mosaic.csv              # Uncertainty mosaic (data)
+│   └── uncertainty_mosaic.png              # Uncertainty mosaic visualization
+└── 8_validation\ (optional)
+    ├── run_01\ ... run_10\                 # Individual validation runs
+    │   ├── removed_cpts.txt                # List of removed CPTs
+    │   ├── 4_gan_images\                   # Generated schemas without removed CPTs
+    │   └── validation_mosaic.png           # Mosaic with dashed lines at removed CPTs
+    └── validation_results.csv              # MAE and MSE metrics per run
 ```
 
 ---
 
-## 📚 Detailed Script Documentation
+### Output Structure
+```
+C:\VOW\res\<region>\<exp_name>\
+├── 1_coords/                  # Validated CPT coordinates
+├── 2_compressed_cpt/          # 64-pixel depth profiles
+├── 3_sections/                # GAN input sections
+├── 4_gan_images/              # Generated schemas (.csv, .png, .html)
+├── 5_enhance/                 # Enhanced schemas
+├── 6_mosaic/                  # Combined mosaics (GAN + enhanced)
+├── 7_model_uncert/            # Uncertainty maps
+└── 8_validation/              # Cross-validation results (optional)
 
-### Main Pipeline: `main_processing.py`
+### Design Principles
 
-**Purpose:** Orchestrates the complete workflow  
-**Usage:** Configure CONFIG section and run directly  
+1. **Separation of Concerns**: Core logic separated from pipeline integration
+2. **Configuration-Driven**: All parameters in `config.py`, no hardcoded values
+3. **Modular Control**: Enable/disable any step via config flags
+4. **Backwards Compatible**: Original scripts preserved in `archive/`
+5. **Consistent Visualization**: Centralized plotting with unified styling
+
+---
+
+## 📚 Detailed Documentation
+
+### Main Pipeline: `main_processing_refactored.py`
+
+**Purpose:** Orchestrates the complete 8/9-step workflow with modular architecture  
+**Usage:** Configure `config.py` and run directly  
 **Logging:** Saves detailed logs to `<experiment_folder>/pipeline.log`
 
-**Key Functions:**
-- `run_coordinate_extraction()` - Calls `extract_coords.py`
-- `run_cpt_data_processing()` - Calls `extract_data.py`
-- `run_section_creation()` - Calls `create_schGAN_input_file.py`
-- `run_schema_generation()` - Inline SchemaGAN prediction
-- `run_mosaic_creation()` - Inline mosaic assembly
+**Pipeline Orchestration:**
+- **Step 1:** `setup_experiment()` - Creates folder structure
+- **Step 2:** `coordinate_extraction.run_coordinate_extraction()` - Extracts CPT coords
+- **Step 3:** `data_compression.run_data_compression()` - Processes CPT data
+- **Step 4:** `section_creation.run_section_creation()` - Creates GAN input sections
+- **Step 5:** `schema_generation.run_schema_generation()` - Generates schemas with GAN
+- **Step 6:** `boundary_enhancement.run_boundary_enhancement()` - Enhances boundaries
+- **Step 7:** `mosaic_creation.run_mosaic_creation()` - Builds mosaics
+- **Step 8:** `mosaic_creation.run_mosaic_creation()` (uncertainty) - Uncertainty mosaic
+- **Step 9:** `validation.run_validation_pipeline()` - Optional cross-validation
 
----
+**Key Features:**
+- Each Project Structure
 
-### Step 1: `utils.py` - `setup_experiment()`
-
-**Purpose:** Creates standardized folder structure for experiments
-
-**Function:**
-```python
-setup_experiment(base_dir, region, exp_name, description)
+```
+vow_schGAN/
+├── config.py                    # ⭐ Edit this for all settings
+├── src/
+│   ├── main_processing_refactored.py  # ⭐ Run this
+│   ├── core/                    # Core implementations
+│   ├── modules/                 # Pipeline wrappers
+│   │   ├── preprocessing/
+│   │   ├── generation/
+│   │   ├── postprocessing/
+│   │   ├── visualization/
+│   │   └── validation/
+│   └── archive/                 # Legacy scripts
+└── requirements.txt
 ```
 
-**Creates:**
-- `1_coords/` - For coordinate files
-- `2_compressed_cpt/` - For processed CPT data
-- `3_sections/` - For GAN input sections
-- `4_gan_images/` - For generated schemas
-- `5_mosaic/` - For final mosaic output
-- `README.txt` - Experiment metadata
-
----
-
-### Step 2: `extract_coords.py`
-
-**Purpose:** Extract and validate CPT coordinates from GEF files
-
-**Main Function:**
-```python
-process_cpt_coords(cpt_folder: Path, output_csv: Path)
-```
-
-**Process:**
-1. Reads all `.gef` files in folder
-2. Checks for valid coordinates (filters out 0.0 or NaN values)
-3. Validates Netherlands RD format (6-digit coordinates)
-4. Auto-corrects common scaling errors (e.g., 123.456 → 123456.000)
-5. Moves invalid files to `no_coords/` subfolder
-6. Saves results to CSV with columns: `name, x, y, fixed`
-
-**Output:** `cpt_coordinates.csv` with validation flags
-
-**Standalone Usage:**
+**Design:** Core logic in `core/`, config-driven wrappers in `modules/`, everything controlled via `config.py`
 ```python
 if __name__ == "__main__":
     GEF_FOLDER = Path(r"C:\VOW\data\test_cpts")
@@ -178,211 +180,59 @@ if __name__ == "__main__":
 
 ---
 
-### Step 3: `extract_data.py`
+### Step 3: CPT Data Processing (`modules/preprocessing/data_compression.py`)
 
-**Purpose:** Interpret CPT data and compress to 32-pixel depth profiles
+**Purpose:** Interpret CPT data and compress to configurable depth resolution (32 or 64 pixels)
+
+**Wraps:** `core/extract_data.py`
 
 **Main Function:**
 ```python
-process_cpts(gef_list) → data_cpts, coords
+run_data_compression(
+    cpt_folder: Path,
+    coords_csv: Path,
+    output_folder: Path,
+    method: str = "mean",
+    target_rows: int = 64
+)
 ```
 
 **Process:**
 1. **Interpret CPTs** using GEOLib-Plus Robertson method
    - Calculates soil behavior index (IC)
    - Applies unit weight calculations
-2. **Equalize Top** - Aligns all CPTs to same starting depth
-3. **Equalize Depth** - Extends all CPTs to same ending depth (fills with zeros)
-4. **Compress to 32 pixels** - Aggregates IC values using `mean` or `max` method
-5. Saves compressed data with columns: `Depth_Index (0-31), CPT1, CPT2, ...`
+2. ⚙️ Configuration
 
-**Key Functions:**
-- `equalize_top(data_cpts)` - Trims to common start depth
-- `equalize_depth(data_cpts, target_depth)` - Extends to common end depth
-- `compress_to_32px(data_cpts, method="mean")` - Aggregates to 32 rows
-- `save_cpt_to_csv(data_cpts, output_folder, filename)` - Exports results
+All settings in **`config.py`**:
 
-**Output:** `compressed_cpt_data_mean.csv` (or `_max.csv`)
-
-**Compression Methods:**
-- `"mean"` - Average IC value within each depth bin (smoother)
-- `"max"` - Maximum IC value within each depth bin (preserves extremes)
-
----
-
-### Step 4: `create_schGAN_input_file.py`
-
-**Purpose:** Create spatial sections with overlapping CPTs for GAN input
-
-**Main Function:**
+### Essential Settings
 ```python
-process_sections(coords_df, cpt_df, out_dir, n_cols, n_rows, 
-                per, overlap, left_pad_frac, right_pad_frac, 
-                from_where, to_where) → manifest
+# Paths
+CPT_FOLDER = Path(r"C:\VOW\data\cpts")
+SCHGAN_MODEL_PATH = Path(r"D:\schemaGAN\h5\schemaGAN.h5")
+RES_DIR = Path(r"C:\VOW\res")
+
+# Processing
+COMPRESSION_METHOD = "mean"     # "mean" (smooth) or "max" (preserve peaks)
+COMPRESSION_TARGET_ROWS = 64    # 32 or 64 pixels depth
+CPTS_PER_SECTION = 6            # CPTs per section
+OVERLAP_CPTS = 2                # Overlap between sections
 ```
 
-**Process:**
-1. **Sort CPTs** by spatial direction (west→east, south→north, etc.)
-2. **Compute Distances** between consecutive CPTs
-3. **Create Sliding Window** with specified overlap
-   - Example: 6 CPTs per section, 2 overlap → sections share 2 CPTs
-4. **Map to Pixel Grid** (512 × 32)
-   - Interpolates CPT positions to column indices
-   - Adds left/right padding for context
-5. **Handle Collisions** - When multiple CPTs map to same column, uses weighted average
-6. **Save Sections** as CSV matrices (rows=depth, cols=distance)
-
-**Output Files:**
-- `section_01_cpts_CPT001_to_CPT006.csv` - Individual section matrices
-- `cpt_coords_with_distances.csv` - CPT positions with cumulative distances
-- `manifest_sections.csv` - Metadata for each section
-
-**Manifest Columns:**
-- `section_index` - Section number
-- `start_idx`, `end_idx` - CPT indices in this section
-- `span_m` - Real-world span between first and last CPT
-- `left_pad_m`, `right_pad_m` - Padding distances
-- `skipped_count` - CPTs without data (filled with zeros)
-- `csv_path` - Path to section file
-
----
-
-### Step 5: Schema Generation (Inline in `main_processing.py`)
-
-**Purpose:** Generate detailed subsurface schemas using trained SchemaGAN
-
-**Function:**
+### Step Controls
 ```python
-run_schema_generation(sections_folder, gan_images_folder, 
-                     model_path, y_top_m, y_bottom_m)
+RUN_STEP_5_GAN = True           # Generate schemas
+RUN_STEP_7_MOSAIC = True        # Create mosaic
+RUN_STEP_9_VALIDATION = False   # Optional validation (~10-15 min/run)
 ```
 
-**Process:**
-1. **Load Model** - Trained SchemaGAN generator (`.h5` file)
-2. **Set Seed** - Random or fixed for reproducibility
-3. **For Each Section:**
-   - Load section CSV (512 × 32 matrix with IC values and zeros)
-   - **Normalize** IC values from [0, 4.3] to [-1, 1]
-   - **Predict** using GAN generator
-   - **Denormalize** back to IC values
-   - Save as CSV and PNG with proper axes
-
-**PNG Features:**
-- **Bottom axis:** Distance along line (meters)
-- **Top axis:** Pixel index (0-511)
-- **Left axis:** Depth index (0-31)
-- **Right axis:** Real depth (meters, e.g., 6.8m to -13.1m)
-- **Colorbar:** IC values (0 to 4.5)
-- **Colormap:** Viridis (green=low IC, yellow=high IC)
-
-**Output:**
-- `section_XX_cpts_YYY_to_ZZZ_seedNNNN_gan.csv` - Schema data
-- `section_XX_cpts_YYY_to_ZZZ_seedNNNN_gan.png` - Schema visualization
-
----
-
-### Step 6: Mosaic Creation (Inline in `main_processing.py`)
-
-**Purpose:** Combine all generated sections into seamless mosaic
-
-**Function:**
+### Visualization
 ```python
-run_mosaic_creation(sections_folder, gan_images_folder, 
-                   mosaic_folder, y_top_m, y_bottom_m)
+PLOT_FONT_SIZE = 8                 # Font size for all plots
+ASPECT_RATIO_WIDTH_HEIGHT = 4.17   # Plot dimensions
 ```
 
-**Process:**
-1. **Find All GAN CSVs** - Matches pattern `section_*_gan.csv`
-2. **Compute Global Grid:**
-   - Finds min/max extent across all sections
-   - Uses median pixel size (dx) for consistency
-3. **Accumulate Sections** with bilinear interpolation:
-   - Maps each section to global coordinate system
-   - Handles overlaps with weighted averaging
-4. **Normalize** - Divides by weight accumulator
-5. **Plot** with proper axes (same as individual schemas)
-
-**Output:**
-- `schemaGAN_mosaic.csv` - Complete mosaic data (32 rows × variable columns)
-- `schemaGAN_mosaic.png` - Final visualization
-
-**Mosaic Advantages:**
-- Seamless blending at section boundaries
-- Consistent spatial scale throughout
-- Complete subsurface profile from all available CPTs
-
----
-
-### Supporting Utilities: `utils.py`
-
-**Key Functions:**
-
-```python
-# File operations
-read_files(path, extension=".gef") → list[Path]
-
-# Distance calculation
-euclid(x1, y1, x2, y2) → float
-
-# IC normalization for GAN (Robertson scale: 0-4.3)
-IC_normalization(data) → [src_norm, tar_norm]  # [0,4.3] → [-1,1]
-reverse_IC_normalization(data) → data          # [-1,1] → [0,4.3]
-
-# Experiment setup
-setup_experiment(base_dir, region, exp_name, description) → folders_dict
-```
-
----
-
-## 🔧 Configuration Guide
-
-### GEOLib-Plus Path
-
-**Location to Update:**
-- `extract_coords.py`: Line 11
-- `extract_data.py`: Line 14
-- `main_processing.py`: Line 35
-- `utils.py`: Line 8
-
-```python
-sys.path.append(r"D:\GEOLib-Plus")  # Change to your installation path
-```
-
-### Processing Parameters
-
-**Compression Method:**
-- `"mean"` - Better for smooth transitions, general soil behavior
-- `"max"` - Preserves strong layers, better for stiff/dense zones
-
-**Section Configuration:**
-- `CPTS_PER_SECTION = 6` - More CPTs = better detail, larger file size
-- `OVERLAP_CPTS = 2` - More overlap = smoother mosaic, more computation
-- Typical: 6 CPTs with 2 overlap gives 67% coverage overlap
-
-**Padding:**
-- `LEFT_PAD_FRACTION = 0.10` - Adds 10% context before first CPT
-- `RIGHT_PAD_FRACTION = 0.10` - Adds 10% context after last CPT
-- Helps GAN understand boundary conditions
-
-**Sorting Direction:**
-- `"west", "east"` - Sorts by X coordinate ascending
-- `"east", "west"` - Sorts by X coordinate descending
-- `"south", "north"` - Sorts by Y coordinate ascending
-- `"north", "south"` - Sorts by Y coordinate descending
-
----
-
-## 🐛 Troubleshooting
-
-### Problem: "No coordinates found" / Files moved to `no_coords/`
-
-**Causes:**
-- GEF file missing `#XYID` header
-- Coordinates are 0.0 or NaN
-- File corrupted or wrong format
-
-**Solution:**
-- Check GEF file structure
+See `config.py` for all options.heck GEF file structure
 - Verify coordinates exist in source data
 - Manually add coordinates if needed
 
@@ -457,39 +307,86 @@ SCHGAN_MODEL_PATH = Path(r"D:\schemaGAN\h5\schemaGAN.h5")  # Update this
 
 ---
 
-## 🔬 Individual Script Usage
+## 🔬 Advanced Usage
 
-All scripts can be run independently for testing or debugging:
+### Running Specific Steps Only
 
-### Extract Coordinates Only
+Edit `config.py` to control which steps execute:
+
 ```python
-python src/extract_coords.py
-# Configure GEF_FOLDER and OUT_CSV at bottom of file
+# Example: Only run GAN generation and mosaic creation
+RUN_STEP_1_FOLDERS = False    # Skip folder setup
+RUN_STEP_2_COORDS = False     # Skip coordinate extraction
+RUN_STEP_3_COMPRESS = False   # Skip data processing
+RUN_STEP_4_SECTIONS = False   # Skip section creation
+RUN_STEP_5_GAN = True         # ✅ Run GAN generation
+RUN_STEP_6_ENHANCE = False    # Skip enhancement
+RUN_STEP_7_MOSAIC = True      # ✅ Run mosaic creation
+RUN_STEP_8_UNCERTAINTY = False
+RUN_STEP_9_VALIDATION = False
 ```
 
-### Process CPT Data Only
-```python
-python src/extract_data.py
-# Configure CPT_FOLDER and OUTPUT_FOLDER in __main__ section
+Then run: `python src/main_processing_refactored.py`
+
+### Running Legacy Standalone Scripts
+
+Original scripts preserved in `src/archive/` can still run independently:
+
+```bash
+# Old pipeline (monolithic)
+python src/archive/main_processing.py
+
+# Individual legacy scripts
+python src/archive/create_schema.py
+python src/archive/create_mosaic.py
+python src/archive/uncertainty_quantification.py
 ```
 
-### Create Sections Only
-```python
-python src/create_schGAN_input_file.py
-# Configure paths in CONFIG section
+**Note:** Legacy scripts have hardcoded paths - edit CONFIG sections within each file.
+
+### Core Scripts (Standalone Mode)
+
+Core implementations can run standalone for testing:
+
+```bash
+# Extract coordinates
+python src/core/extract_coords.py
+# Edit GEF_FOLDER and OUT_CSV at bottom of file
+
+# Process CPT data
+python src/core/extract_data.py
+# Edit CPT_FOLDER and OUTPUT_FOLDER in __main__ section
+
+# Create sections
+python src/core/create_schGAN_input_file.py
+# Edit paths in CONFIG section (lines 20-40)
+
+# Create mosaic
+python src/core/create_mosaic.py
+# Edit MANIFEST_CSV, COORDS_WITH_DIST_CSV, GAN_DIR (lines 13-26)
 ```
 
-### Generate Schemas Only
+### Validation-Only Run
+
+To run validation on existing results:
+
 ```python
-python src/create_schema.py
-# Configure SECTIONS_DIR, PATH_TO_MODEL, OUT_DIR
+# In config.py
+RUN_STEP_1_FOLDERS = False
+RUN_STEP_2_COORDS = False
+RUN_STEP_3_COMPRESS = False
+RUN_STEP_4_SECTIONS = False
+RUN_STEP_5_GAN = False
+RUN_STEP_6_ENHANCE = False
+RUN_STEP_7_MOSAIC = False
+RUN_STEP_8_UNCERTAINTY = False
+RUN_STEP_9_VALIDATION = True   # Only validation
+
+VALIDATION_N_RUNS = 10         # Number of iterations
+VALIDATION_N_REMOVE = 12       # CPTs to remove per run
 ```
 
-### Create Mosaic Only
-```python
-python src/create_mosaic.py
-# Configure MANIFEST_CSV, COORDS_WITH_DIST_CSV, GAN_DIR
-```
+**Runtime:** ~10-15 minutes per validation run (depends on CPT count and model size)
 
 ---
 
@@ -498,20 +395,56 @@ python src/create_mosaic.py
 ```
 vow_schGAN/
 │
-├── src/
-│   ├── main_processing.py          # ⭐ Main pipeline orchestrator
-│   ├── extract_coords.py            # Step 2: Coordinate extraction
-│   ├── extract_data.py              # Step 3: CPT interpretation & compression
-│   ├── create_schGAN_input_file.py  # Step 4: Section creation
-│   ├── create_schema.py             # Step 5: GAN schema generation (standalone)
-│   ├── create_mosaic.py             # Step 6: Mosaic assembly (standalone)
-│   └── utils.py                     # Shared utilities
+├── config.py                               # ⭐ Central configuration file
+├── requirements.txt                         # Python dependencies
+├── README.md                                # This file
 │
-├── requirements.txt                 # Python dependencies
-├── README.md                        # This file
+├── src/
+│   ├── main_processing_refactored.py       # ⭐ Main pipeline orchestrator
+│   │
+│   ├── core/                               # Core implementations
+│   │   ├── extract_coords.py               # Coordinate extraction logic
+│   │   ├── extract_data.py                 # CPT processing & compression
+│   │   ├── create_schGAN_input_file.py     # Section creation logic
+│   │   ├── create_mosaic.py                # Mosaic building logic
+│   │   └── utils.py                        # Shared utilities
+│   │
+│   ├── modules/                            # Pipeline integration modules
+│   │   ├── preprocessing/
+│   │   │   ├── coordinate_extraction.py    # Step 2 wrapper
+│   │   │   └── data_compression.py         # Step 3 wrapper
+│   │   ├── generation/
+│   │   │   ├── section_creation.py         # Step 4 wrapper
+│   │   │   └── schema_generation.py        # Step 5 implementation
+│   │   ├── postprocessing/
+│   │   │   ├── boundary_enhancement.py     # Step 6 implementation
+│   │   │   └── mosaic_creation.py          # Step 7 wrapper
+│   │   ├── visualization/
+│   │   │   └── plotting.py                 # Unified plotting functions
+│   │   └── validation/
+│   │       └── validation.py               # Step 9 cross-validation
+│   │
+│   └── archive/                            # Legacy standalone scripts
+│       ├── main_processing.py              # Original monolithic pipeline
+│       ├── boundary_enhancement.py
+│       ├── combination_calculation.py
+│       ├── create_mosaic_adv.py
+│       ├── create_mosaic.py
+│       ├── create_schema.py
+│       ├── explore_gan_arch.py
+│       ├── get_elevation_from_AHN.py
+│       ├── uncertainty_quantification.py
+│       └── validation.py
+│
 └── .github/
-    └── copilot-instructions.md      # AI assistant guidelines
+    └── copilot-instructions.md             # AI assistant guidelines
 ```
+
+### Key Differences: Core vs Modules
+
+- **`core/`** - Pure implementations with hardcoded constants (can run standalone)
+- **`modules/`** - Config-driven wrappers that integrate core logic into pipeline
+- **`archive/`** - Original scripts preserved for reference/comparison
 
 ---
 
@@ -531,35 +464,89 @@ vow_schGAN/
 
 ---
 
-## 📝 Version History
+## 🎨 Visualization Features
 
-### Current Version (2025)
-- ✅ Complete automated pipeline
-- ✅ Comprehensive logging system
-- ✅ Coordinate validation and auto-correction
-- ✅ Flexible sectioning with overlap
-- ✅ Mosaic generation with interpolation
-- ✅ All scripts can run standalone or integrated
+### Unified Styling
+All plots follow consistent design:
+- **Font Size:** 8pt (configurable via `config.PLOT_FONT_SIZE`)
+- **Aspect Ratio:** 4.17:1 width/height (configurable)
+- **Resolution:** 800 DPI for PNG outputs
+- **Colormap:** Custom 5-class IC colormap with soil type boundaries
+- **Dual Axes:** Pixel indices + real-world coordinates on all plots
 
-### Previous Versions
-- Basic coordinate extraction
-- Individual CPT processing
-- Manual workflow execution
+### Interactive HTML Viewers
+Every PNG visualization has an accompanying HTML file with:
+- **Zoom & Pan:** Mouse wheel and drag
+- **Pixel Inspector:** Hover to see exact coordinates
+- **No Dependencies:** Pure HTML + base64-encoded images
 
----
-
-## 📧 Support
-
-This readme was made wiy Copilot. For any questions read out to fabian.campos@deltares.nl
-
----
-
-## ⚖️ License
-
-Part of the VOW project for geotechnical subsurface modeling.
+### Custom IC Colormap
+Five distinct colors for soil types:
+1. **Sand** (IC 0.0-2.05): Yellow
+2. **Sand Mixture** (IC 2.05-2.60): Orange  
+3. **Silt Mixture** (IC 2.60-2.95): Light green
+4. **Clay** (IC 2.95-3.60): Green
+5. **Organic** (IC 3.60-4.5): Dark green
 
 ---
 
-**Last Updated:** October 2025  
-**Python Version:** 3.10+  
-**Required:** GEOLib-Plus, TensorFlow 2.8+
+## 🧪 Testing & Validation
+
+### Built-in Validation
+Step 9 provides comprehensive model validation:
+
+**Method:** Leave-out cross-validation
+- Randomly removes N CPTs (e.g., 12)
+- Generates schema without those CPTs
+� Understanding Results
+
+### IC Scale (Robertson 1990)
+- **IC < 2.05** - Sand (yellow/orange in plots)
+- **IC 2.05-2.60** - Sand mixtures
+- **IC 2.60-2.95** - Silt mixtures (green)
+- **IC 2.95-3.60** - Clay
+- **IC > 3.60** - Organic soil (dark green)
+
+### Validation Metrics
+```
+MAE: 0.29 ± 0.02  # Mean prediction error in IC units
+MSE: 0.22 ± 0.03  # Squared error
+```
+- **MAE < 0.3** = Excellent
+- **MAE 0.3-0.5** = Good
+- **MAE > 0.5** = Consider retraining
+
+---
+
+## 🐛 Common Issues
+
+| Problem | Solution |
+|---------|----------|
+| "No coordinates found" | Check GEF files have `#XYID` header with valid RD coordinates |
+| "Model file not found" | Update `SCHGAN_MODEL_PATH` in `config.py` |
+| Empty sections | Verify CPT names match between coordinate and data files |
+| Poor GAN quality | Ensure CPTs closely spaced, IC values in 0-4.3 range | Specific Steps
+Set `RUN_STEP_X = False` in `config.py` to skip steps:
+```python
+RUN_STEP_5_GAN = True      # Only run GAN + mosaic
+RUN_STEP_7_MOSAIC = True
+# All others = False
+```
+
+### Validation Only
+```python
+RUN_STEP_9_VALIDATION = True  # Only this True
+VALIDATION_N_RUNS = 10        # ~10-15 min per run
+```
+
+### Legacy Scripts
+Original monolithic scripts available in `src/archive/` (require editing hardcoded paths---
+
+## 📧 Contact
+
+**Author:** Fabian Campos (fabian.campos@deltares.nl)  
+**Project:** VOW - Geotechnical Subsurface Modeling  
+**License:** Deltares © 2024-2025
+
+**Version:** 2.0 (December 2025)  
+**Python:** 3.10+ | **Dependencies:** TensorFlow 2.8+, GEOLib-Plu
