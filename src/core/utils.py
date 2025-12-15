@@ -244,7 +244,7 @@ def setup_experiment(
         "6_mosaic",
         "7_model_uncert",
         "8_validation",
-        "9_struct_uncert",
+        "9_leaveout_uncert",
     ]
 
     # Create subfolders

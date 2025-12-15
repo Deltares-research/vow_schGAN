@@ -81,7 +81,7 @@ def main():
     global logger
 
     # =============================================================================
-    # 1. CREATE EXPERIMENT FOLDER STRUCTURE
+    # 0. CREATE EXPERIMENT FOLDER STRUCTURE
     # =============================================================================
     print("=" * 60)
     print("Starting VOW SchemaGAN Pipeline")
@@ -108,7 +108,7 @@ def main():
     y_bottom_final = None
 
     # =============================================================================
-    # 2. EXTRACT COORDINATES FROM CPT FILES
+    # 1. EXTRACT COORDINATES FROM CPT FILES
     # =============================================================================
     logger.info("Step 2: Extracting coordinates from CPT files...")
 
@@ -121,7 +121,7 @@ def main():
         return
 
     # =============================================================================
-    # 3. EXTRACT AND COMPRESS CPT DATA
+    # 2. EXTRACT AND COMPRESS CPT DATA
     # =============================================================================
     # Initialize depth variables
     y_top_final = config.Y_TOP_M
@@ -176,7 +176,7 @@ def main():
                 y_bottom_final = depth_data.get("y_bottom_m", y_bottom_final)
 
     # =============================================================================
-    # 4. CREATE SECTIONS FOR SCHEMAGAN INPUT
+    # 3. CREATE SECTIONS FOR SCHEMAGAN INPUT
     # =============================================================================
     if config.RUN_STEP_3_CREATE_SECTIONS:
         logger.info("=" * 60)
@@ -205,7 +205,7 @@ def main():
         logger.info("Step 3: Skipped (RUN_STEP_3_CREATE_SECTIONS = False)")
 
     # =============================================================================
-    # 5. GENERATE SCHEMAS USING SCHEMAGAN MODEL
+    # 4. GENERATE SCHEMAS USING SCHEMAGAN MODEL
     # =============================================================================
     if config.RUN_STEP_4_CREATE_GAN_IMAGES:
         logger.info("=" * 60)
@@ -254,7 +254,7 @@ def main():
         logger.info("Step 4: Skipped (RUN_STEP_4_CREATE_GAN_IMAGES = False)")
 
     # =============================================================================
-    # 6. ENHANCE GENERATED SCHEMAS (OPTIONAL)
+    # 5. ENHANCE GENERATED SCHEMAS (OPTIONAL)
     # =============================================================================
     if (
         config.RUN_STEP_5_ENHANCE
@@ -286,7 +286,7 @@ def main():
             )
 
     # =============================================================================
-    # 7. CREATE MOSAICS FROM GENERATED SCHEMAS
+    # 6. CREATE MOSAICS FROM GENERATED SCHEMAS
     # =============================================================================
     if config.RUN_STEP_6_CREATE_MOSAIC:
         logger.info("=" * 60)
@@ -344,7 +344,7 @@ def main():
         logger.info("Step 6: Skipped (RUN_STEP_6_CREATE_MOSAIC = False)")
 
     # =============================================================================
-    # 8. CREATE UNCERTAINTY MOSAICS (OPTIONAL)
+    # 7. CREATE UNCERTAINTY MOSAICS (OPTIONAL)
     # =============================================================================
     if config.RUN_STEP_7_MODEL_UNCERTAINTY and config.COMPUTE_UNCERTAINTY:
         logger.info("=" * 60)
@@ -403,7 +403,7 @@ def main():
             )
 
     # =============================================================================
-    # 9. RUN VALIDATION (OPTIONAL)
+    # 8. RUN VALIDATION (OPTIONAL)
     # =============================================================================
     if config.RUN_STEP_8_VALIDATION:
         logger.info("=" * 60)
@@ -428,45 +428,36 @@ def main():
         logger.info("Step 8: Skipped (RUN_STEP_8_VALIDATION = False)")
 
     # =============================================================================
-    # 9. RUN VALIDATION (ALIGNED MOSAIC, NEW)
+    # 9. LEAVE-OUT SENSITIVITY UNCERTAINTY (OPTIONAL)
     # =============================================================================
-    if config.RUN_STEP_8_VALIDATION:
+    if config.RUN_STEP_9_LEAVEOUT_UNCERT:
         logger.info("=" * 60)
-        logger.info(
-            "Step 8: Running validation with leave-out cross-validation (aligned mosaic)..."
-        )
-        try:
-            from modules.validation_aligned import run_validation_pipeline_aligned
+        logger.info("Step 9: Computing leave-out sensitivity uncertainty...")
 
-            run_validation_pipeline_aligned(
-                folders=folders,
-                compressed_csv=compressed_csv,
+        try:
+            from modules.uncertainty_leaveout import run_leaveout_uncertainty
+
+            original_mosaic_csv = folders["6_mosaic"] / "original_mosaic.csv"
+            validation_root = folders["8_validation"]
+            output_folder = folders[
+                "9_leaveout_uncert"
+            ]  # you can rename this folder key later
+
+            results = run_leaveout_uncertainty(
+                original_mosaic_csv=original_mosaic_csv,
+                validation_root=folders["8_validation"],
+                output_folder=folders["9_leaveout_uncert"],
                 y_top_m=y_top_final,
                 y_bottom_m=y_bottom_final,
-                n_runs=config.VALIDATION_N_RUNS,
-                n_remove=config.VALIDATION_N_REMOVE,
-                base_seed=config.VALIDATION_BASE_SEED,
+                expected_rows=config.CPT_DEPTH_PIXELS,  # 64
+                logger=logger,
+            )
+
+            logger.info(
+                f"Leave-out uncertainty done. n_runs={results['n_runs']}, target_cols={results['target_cols']}"
             )
         except Exception as e:
-            logger.error(f"Failed to run aligned validation: {e}")
-    else:
-        logger.info("=" * 60)
-        logger.info("Step 8: Skipped (RUN_STEP_8_VALIDATION = False)")
-
-    # =============================================================================
-    # 9. STRUCTURAL UNCERTAINTY (OPTIONAL)
-    # =============================================================================
-    if config.RUN_STEP_9_STRUCT_UNCERT:
-        logger.info("=" * 60)
-        logger.info("Step 9: Computing structural uncertainty...")
-
-        try:
-            # TODO: Implement structural uncertainty computation
-            # This step will analyze uncertainty due to structural/geological variability
-            logger.info("Structural uncertainty computation not yet implemented.")
-            logger.info(f"Output folder: {folders['9_struct_uncert']}")
-        except Exception as e:
-            logger.error(f"Failed to compute structural uncertainty: {e}")
+            logger.error(f"Failed to compute leave-out uncertainty: {e}")
     else:
         logger.info("=" * 60)
         logger.info("Step 9: Skipped (RUN_STEP_9_STRUCT_UNCERT = False)")
