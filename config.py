@@ -20,9 +20,9 @@ RUN_STEP_3_CREATE_SECTIONS = True  # Create sections for GAN input
 RUN_STEP_4_CREATE_GAN_IMAGES = True  # Generate schemas with GAN
 RUN_STEP_5_ENHANCE = True  # Boundary enhancement (if method selected)
 RUN_STEP_6_CREATE_MOSAIC = True  # Create mosaic from schemas
-RUN_STEP_7_MODEL_UNCERTAINTY = True  # Compute uncertainty (if enabled)
-RUN_STEP_8_VALIDATION = True  # Run validation with leave-out cross-validation
-RUN_STEP_9_LEAVEOUT_UNCERT = True  # Compute structural uncertainty
+RUN_STEP_7_MODEL_UNCERTAINTY = False  # Compute uncertainty (if enabled)
+RUN_STEP_8_VALIDATION = False  # Run validation with leave-out cross-validation
+RUN_STEP_9_LEAVEOUT_UNCERT = False  # Compute structural uncertainty
 
 # =============================================================================
 # PATHS CONFIGURATION
@@ -37,29 +37,28 @@ RES_DIR = Path(BASE_PATH / "res")  # Base results directory
 
 # Input data paths
 CPT_FOLDER = Path(
-    BASE_PATH / "data" / "cpts" / "betuwepand" / "dike_south_BRO"
+    BASE_PATH / "data" / "cpts" / "betuwepand" / "dike_north_BRO"
 )  # Folder with .gef CPT files
-# CPT_FOLDER = Path(r"C:\VOW\data\cpts\waalbandijk")  # For quick testing with fewer CPTs
 
 SCHGAN_MODEL_PATH = Path(r"D:\schemaGAN\h5\schemaGAN.h5")  # Trained SchemaGAN model
-
 
 # =============================================================================
 # EXPERIMENT CONFIGURATION
 # =============================================================================
 
-REGION = "south"  # Region name for experiment folder and the data subfolder
-EXP_NAME = "exp_18"
+REGION = "north"  # Region name for experiment folder and the data subfolder
+EXP_NAME = "exp_22"
 DESCRIPTION = (
-    "added plots for validation profiles,"
-    "added interactive html plots"
-    "new color scale for IC visualization,"
+    "interactive html plots,"
+    "CPT comparison from the validation step,"
+    "new color scale for IC visualization with 4 clases and internal variability,"
     "CPT compression to 64,"
     "2 CPT overlap,"
-    "30% vertical overlap,"
+    "50% vertical overlap,"
     "10% padding,"
     "No boundary enhancement,"
-    "Added uncertainty quantification with 10 samples,"
+    "Model uncertainty with 5 MC samples,"
+    "Leave-out validation with 500 runs removing 12 CPTs each,"
 )
 
 
@@ -135,7 +134,7 @@ IC_MIN = 1.0  # Minimum IC value (start of sand)
 IC_SAND_SANDMIX_BOUNDARY = 2.05  # Boundary between sand and sand mix
 IC_SANDMIX_SILTMIX_BOUNDARY = 2.6  # Boundary between sand mix and silt mix
 IC_SILTMIX_CLAY_BOUNDARY = 2.95  # Boundary between silt mix and clay
-IC_CLAY_ORGANIC_BOUNDARY = 3.6  # Boundary between clay and organic
+IC_CLAY_ORGANIC_BOUNDARY = 3.4  # Boundary between clay and organic
 IC_MAX = 4.5  # Maximum IC value (end of organic)
 
 
@@ -169,7 +168,7 @@ N_MC_SAMPLES = (
 # VALIDATION PARAMETERS
 # =============================================================================
 
-VALIDATION_N_RUNS = 50  # Number of validation runs (leave-out cross-validation)
+VALIDATION_N_RUNS = 600  # Number of validation runs (leave-out cross-validation)
 VALIDATION_N_REMOVE = 12  # Number of CPTs to remove per run
 VALIDATION_BASE_SEED = 20231201  # Random seed for reproducibility (None for random)
 

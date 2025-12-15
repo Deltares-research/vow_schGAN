@@ -115,7 +115,7 @@ def run_mosaic_creation(
         logger.info(f"Mosaic CSV saved: {mosaic_csv}")
 
         # Create visualization
-        mosaic_png = mosaic_folder / f"{mosaic_prefix}_mosaic.png"
+        mosaic_png = mosaic_folder / f"{mosaic_prefix}_mosaic.svg"
         logger.info(f"Creating mosaic visualization: {mosaic_png}")
 
         # Set visualization parameters

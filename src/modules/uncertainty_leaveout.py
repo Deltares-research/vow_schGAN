@@ -11,7 +11,7 @@ def _plot_uncertainty_map_png(
     out_png: Path,
     y_top_m: float,
     y_bottom_m: float,
-    xmin: float = 0.0,
+    xmin: float | None = None,
     xmax: float | None = None,
     coords: pd.DataFrame | None = None,
     show_cpt_locations: bool = True,
@@ -21,15 +21,26 @@ def _plot_uncertainty_map_png(
     import matplotlib.pyplot as plt
 
     n_rows_total, n_cols = arr.shape
-    if xmax is None:
-        xmax = float(n_cols - 1)
 
-    # Assume uniform pixel width in "x units" (meters if you provide xmin/xmax in meters)
+    # Use meters if coords provided
+    x_in_meters = coords is not None and "cum_along_m" in coords.columns
+
+    if x_in_meters:
+        if xmin is None:
+            xmin = float(coords["cum_along_m"].min())  # should be 0
+        if xmax is None:
+            xmax = float(coords["cum_along_m"].max())  # ~8341 for your file
+        x_label = "Distance along line (m)"
+    else:
+        if xmin is None:
+            xmin = 0.0
+        if xmax is None:
+            xmax = float(n_cols - 1)
+        x_label = "X (pixel index)"
+
     global_dx = (xmax - xmin) / max(n_cols - 1, 1)
 
-    base_width = 20
-    height = base_width / 8
-    fig, ax = plt.subplots(figsize=(base_width, height))
+    fig, ax = plt.subplots(figsize=(20, 20 / 8))
 
     im = ax.imshow(
         arr,
@@ -37,6 +48,7 @@ def _plot_uncertainty_map_png(
         vmin=None,
         vmax=None,
         aspect="auto",
+        interpolation="nearest",
         extent=[xmin - global_dx / 2, xmax + global_dx / 2, n_rows_total - 0.5, -0.5],
     )
 
@@ -44,16 +56,13 @@ def _plot_uncertainty_map_png(
     cbar.ax.tick_params(labelsize=font_size)
     cbar.set_label("Uncertainty (Std Dev)", fontsize=font_size)
 
-    # CPT vertical lines (if coords contain cum_along_m and you provided xmin/xmax in meters)
-    if show_cpt_locations and coords is not None and "cum_along_m" in coords.columns:
+    # CPT vertical lines (now consistent: meters on meters)
+    if show_cpt_locations and x_in_meters:
         for cpt_x in coords["cum_along_m"].values:
             if xmin <= cpt_x <= xmax:
                 ax.axvline(x=cpt_x, color="black", linewidth=1, alpha=0.5, zorder=10)
 
-    ax.set_xlabel(
-        "Distance along line (m)" if coords is not None else "X (pixel index)",
-        fontsize=font_size,
-    )
+    ax.set_xlabel(x_label, fontsize=font_size)
     ax.set_ylabel("Depth Index (global)", fontsize=font_size)
     ax.tick_params(axis="both", labelsize=font_size)
 
@@ -243,12 +252,12 @@ def run_leaveout_uncertainty(
         sigma_png,
         y_top_m=y_top_m,
         y_bottom_m=y_bottom_m,
-        xmin=0.0,
-        xmax=float(sigma_map.shape[1] - 1),
+        xmin=None,
+        xmax=None,
         coords=coords_df,
         show_cpt_locations=True,
         font_size=10,
-        )
+    )
     log(f"Saved sigma PNG: {sigma_png}")
 
     log(f"Saved sigma map: {sigma_csv}")
