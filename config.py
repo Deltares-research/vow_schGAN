@@ -29,9 +29,11 @@ RUN_STEP_9_LEAVEOUT_UNCERT = True  # Compute structural uncertainty
 # =============================================================================
 
 # Base paths for the experiments
+#BASE_PATH = Path(
+#     r"N:\Projects\11211500\11211566\B. Measurements and calculations\007 - Remote sensing AI"
+# )
 BASE_PATH = Path(
-    r"N:\Projects\11211500\11211566\B. Measurements and calculations\007 - Remote sensing AI"
-)
+r"C:\VOW")
 
 # TODO: How to deal with this?
 GEOLIB_PLUS_PATH = r"D:\GEOLib-Plus"  # Path to GEOLib-Plus library (my local modified one)
@@ -41,7 +43,7 @@ RES_DIR = Path(BASE_PATH / "res")  # Base results directory
 
 # Input data paths
 CPT_FOLDER = Path(
-    BASE_PATH / "data" / "cpts" / "betuwepand" / "dike_north_BRO"
+    BASE_PATH / "data" / "cpts" / "betuwepand" / "dike_south_BRO"
 )  # Folder with .gef CPT files
 
 SCHGAN_MODEL_PATH = Path(
@@ -52,8 +54,8 @@ SCHGAN_MODEL_PATH = Path(
 # EXPERIMENT CONFIGURATION
 # =============================================================================
 
-REGION = "north"  # Region name for experiment folder and the data subfolder
-EXP_NAME = "exp_34"
+REGION = "south"  # Region name for experiment folder and the data subfolder
+EXP_NAME = "exp_56"
 DESCRIPTION = (
     "interactive html plots,"
     "CPT comparison from the validation step,"
@@ -163,7 +165,7 @@ ENHANCE_METHOD = "none"  # Enhancement method to sharpen layer boundaries
 
 COMPUTE_UNCERTAINTY = True  # Compute prediction uncertainty using MC Dropout
 N_MC_SAMPLES = (
-    100  # Number of MC Dropout samples (20-100 typical, more = slower but more accurate)
+    2  # Number of MC Dropout samples (20-100 typical, more = slower but more accurate)
 )
 # MC Dropout reveals where the GAN is uncertain in its predictions:
 #   - High uncertainty: complex transitions, far from data, ambiguous interpolations
@@ -174,7 +176,7 @@ N_MC_SAMPLES = (
 # VALIDATION PARAMETERS
 # =============================================================================
 
-VALIDATION_N_RUNS = 100  # Number of validation runs (leave-out cross-validation)
+VALIDATION_N_RUNS = 200  # Number of validation runs (leave-out cross-validation)
 VALIDATION_N_REMOVE = 12  # Number of CPTs to remove per run
 VALIDATION_BASE_SEED = 20231201  # Random seed for reproducibility (None for random)
 

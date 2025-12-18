@@ -126,9 +126,10 @@ def run_mosaic_creation(
             ic_boundaries_val = None
         else:
             if create_colormap_func:
-                cmap_val, vmin_val, vmax_val = create_colormap_func()
+                #cmap_val, vmin_val, vmax_val = create_colormap_func()
+                cmap_val, vmin_val, vmax_val = "viridis", 1.3, 4.2
             else:
-                cmap_val, vmin_val, vmax_val = "viridis", 0, 4.5
+                cmap_val, vmin_val, vmax_val = "viridis", 1.3, 4.2
             colorbar_label = "IC Value"
             ic_boundaries_val = ic_boundaries
 

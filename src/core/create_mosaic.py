@@ -367,8 +367,8 @@ def plot_mosaic(
     out_png: Path,
     coords=None,
     show_cpt_locations=True,
-    vmin=0,
-    vmax=4.5,
+    vmin=1.3,
+    vmax=4.2,
     cmap="viridis",
     colorbar_label="Value",
     ic_boundaries=None,
@@ -392,8 +392,8 @@ def plot_mosaic(
     """
     import matplotlib.colors as mcolors
 
-    base_width = 20
-    height = base_width / 8 
+    base_width = 14
+    height = base_width / 5.5
 
     fig, ax = plt.subplots(figsize=(base_width, height))
 
@@ -428,16 +428,16 @@ def plot_mosaic(
         extent=[xmin - global_dx / 2, xmax + global_dx / 2, n_rows_total - 0.5, -0.5],
     )
 
-    cbar = plt.colorbar(im, label=colorbar_label, extend=extend)
+    cbar = plt.colorbar(im, label=colorbar_label, extend=extend, pad=0.045)
     cbar.ax.tick_params(labelsize=config.PLOT_FONT_SIZE)
     cbar.set_label(colorbar_label, fontsize=config.PLOT_FONT_SIZE)
 
     # Set custom ticks at color boundaries if provided
-    if ic_boundaries is not None:
-        cbar.set_ticks(list(ic_boundaries))
-        cbar.set_ticklabels(
-            [f"{val:g}" for val in ic_boundaries], fontsize=config.PLOT_FONT_SIZE
-        )
+    # if ic_boundaries is not None:
+    #     cbar.set_ticks(list(ic_boundaries))
+    #     cbar.set_ticklabels(
+    #         [f"{val:g}" for val in ic_boundaries], fontsize=config.PLOT_FONT_SIZE
+    #     )
 
     # Add vertical lines at CPT positions if enabled and coords provided
     # Only show CPTs that are within the mosaic extent
@@ -448,7 +448,7 @@ def plot_mosaic(
                 ax.axvline(x=cpt_x, color="black", linewidth=1, alpha=0.5, zorder=10)
 
     ax.set_xlabel("Distance along line (m)", fontsize=config.PLOT_FONT_SIZE)
-    ax.set_ylabel("Depth Index (global)", fontsize=config.PLOT_FONT_SIZE)
+    ax.set_ylabel("Pixel index", fontsize=config.PLOT_FONT_SIZE)
     ax.tick_params(axis="both", labelsize=config.PLOT_FONT_SIZE)
 
     # Top x-axis: pixels or normalized 0..32
@@ -461,7 +461,7 @@ def plot_mosaic(
             return xmin + p * global_dx
 
         top = ax.secondary_xaxis("top", functions=(m_to_px, px_to_m))
-        top.set_xlabel("Pixel index (0…W-1)", fontsize=config.PLOT_FONT_SIZE)
+        top.set_xlabel("Pixel index", fontsize=config.PLOT_FONT_SIZE)
         top.tick_params(labelsize=config.PLOT_FONT_SIZE)
     else:
 
@@ -484,11 +484,11 @@ def plot_mosaic(
         return 0 if abs(denom) < 1e-12 else (y_m - Y_TOP_M) * (n_rows_total - 1) / denom
 
     right = ax.secondary_yaxis("right", functions=(idx_to_m, m_to_idx))
-    right.set_ylabel("Depth (m)", fontsize=config.PLOT_FONT_SIZE)
+    right.set_ylabel("Depth NAP (m)", fontsize=config.PLOT_FONT_SIZE)
     right.tick_params(labelsize=config.PLOT_FONT_SIZE)
 
     plt.title(
-        "SchemaGAN Mosaic (with vertical & horizontal blending)",
+        "SchemaGAN Mosaic",
         fontsize=config.PLOT_FONT_SIZE,
     )
     plt.tight_layout()
@@ -509,7 +509,7 @@ def main():
     pd.DataFrame(mosaic).to_csv(mosaic_csv, index=False)
 
     # Save PNG
-    mosaic_png = OUT_DIR / "schemaGAN_mosaic.png"
+    mosaic_png = OUT_DIR / "schemaGAN_mosaic.svg"
     plot_mosaic(mosaic, xmin, xmax, global_dx, n_rows_total, mosaic_png)
 
     print(f"[DONE] Mosaic saved:\n  CSV → {mosaic_csv}\n  PNG → {mosaic_png}")

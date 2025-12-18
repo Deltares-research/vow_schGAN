@@ -160,15 +160,16 @@ def run_schema_generation(
                 cpt_positions = []
 
             # Create and save PNG
-            output_png = gan_images_folder / f"{section_file.stem}_seed{seed}_gan.png"
+            output_png = gan_images_folder / f"{section_file.stem}_seed{seed}_gan.svg"
 
             # Get colormap
             if create_colormap_func:
-                cmap, vmin, vmax = create_colormap_func()
+                cmap, vmin, vmax = "viridis", 1.3, 4.2
+                #cmap, vmin, vmax = create_colormap_func()
             else:
-                cmap, vmin, vmax = "viridis", 0, 4.5
+                cmap, vmin, vmax = "viridis", 1.3, 4.2
 
-            plt.figure(figsize=(10, 2.4))
+            plt.figure(figsize=(9, 2.5))
             plt.imshow(
                 gan_result,
                 cmap=cmap,
@@ -182,24 +183,24 @@ def run_schema_generation(
             cbar.set_label("IC Value", fontsize=config.PLOT_FONT_SIZE)
 
             # Set custom ticks if using IC colormap
-            if create_colormap_func:
-                cbar.set_ticks(
-                    [
-                        ic_min,
-                        ic_sand_sandmix,
-                        ic_sandmix_siltmix,
-                        ic_siltmix_clay,
-                        ic_clay_organic,
-                        ic_max,
-                    ]
-                )
-                cbar.set_ticklabels(
-                    [f"{v:g}" for v in ic_boundaries], fontsize=config.PLOT_FONT_SIZE
-                )
+            # if create_colormap_func:
+            #     cbar.set_ticks(
+            #         [
+            #             ic_min,
+            #             ic_sand_sandmix,
+            #             ic_sandmix_siltmix,
+            #             ic_siltmix_clay,
+            #             ic_clay_organic,
+            #             ic_max,
+            #         ]
+            #     )
+            #     cbar.set_ticklabels(
+            #         [f"{v:g}" for v in ic_boundaries], fontsize=config.PLOT_FONT_SIZE
+            #     )
 
             ax = plt.gca()
             ax.set_xlabel("Distance along line (m)", fontsize=config.PLOT_FONT_SIZE)
-            ax.set_ylabel("Depth Index", fontsize=config.PLOT_FONT_SIZE)
+            ax.set_ylabel("Pixel index", fontsize=config.PLOT_FONT_SIZE)
             ax.tick_params(axis="both", labelsize=config.PLOT_FONT_SIZE)
 
             # Top x-axis: pixel index
@@ -211,7 +212,7 @@ def run_schema_generation(
 
             top = ax.secondary_xaxis("top", functions=(m_to_px, px_to_m))
             top.set_xlabel(
-                f"Pixel index (0…{n_cols-1})", fontsize=config.PLOT_FONT_SIZE
+                f"Pixel index", fontsize=config.PLOT_FONT_SIZE
             )
             top.tick_params(labelsize=config.PLOT_FONT_SIZE)
 
@@ -230,7 +231,7 @@ def run_schema_generation(
             right = ax.secondary_yaxis(
                 "right", functions=(idx_to_meters, meters_to_idx)
             )
-            right.set_ylabel("Depth (m)", fontsize=config.PLOT_FONT_SIZE)
+            right.set_ylabel("Depth NAP (m)", fontsize=config.PLOT_FONT_SIZE)
             right.tick_params(labelsize=config.PLOT_FONT_SIZE)
 
             # Add CPT position markers
@@ -367,7 +368,7 @@ def _process_uncertainty(
 
         # Create visualization
         uncertainty_png = (
-            uncertainty_folder / f"{section_file.stem}_seed{seed}_uncertainty.png"
+            uncertainty_folder / f"{section_file.stem}_seed{seed}_uncertainty.svg"
         )
         visualize_uncertainty(
             uncertainty_map=pred_std,

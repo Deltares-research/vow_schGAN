@@ -4,6 +4,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import logging
+import config
 
 
 def _plot_uncertainty_map_png(
@@ -15,7 +16,7 @@ def _plot_uncertainty_map_png(
     xmax: float | None = None,
     coords: pd.DataFrame | None = None,
     show_cpt_locations: bool = True,
-    font_size: int = 8,
+    font_size: int = config.PLOT_FONT_SIZE,
     title: str = "Leave-out uncertainty (Std Dev)",
 ):
     import matplotlib.pyplot as plt
@@ -36,11 +37,11 @@ def _plot_uncertainty_map_png(
             xmin = 0.0
         if xmax is None:
             xmax = float(n_cols - 1)
-        x_label = "X (pixel index)"
+        x_label = "Pixel index"
 
     global_dx = (xmax - xmin) / max(n_cols - 1, 1)
 
-    fig, ax = plt.subplots(figsize=(20, 20 / 8))
+    fig, ax = plt.subplots(figsize=(15, 15 / 5.5))
 
     im = ax.imshow(
         arr,
@@ -52,7 +53,7 @@ def _plot_uncertainty_map_png(
         extent=[xmin - global_dx / 2, xmax + global_dx / 2, n_rows_total - 0.5, -0.5],
     )
 
-    cbar = plt.colorbar(im, label="Uncertainty (Std Dev)", extend="neither")
+    cbar = plt.colorbar(im, label="Uncertainty (Std Dev)", extend="neither", pad=0.05)
     cbar.ax.tick_params(labelsize=font_size)
     cbar.set_label("Uncertainty (Std Dev)", fontsize=font_size)
 
@@ -62,9 +63,31 @@ def _plot_uncertainty_map_png(
             if xmin <= cpt_x <= xmax:
                 ax.axvline(x=cpt_x, color="black", linewidth=1, alpha=0.5, zorder=10)
 
+    # Bottom axis
     ax.set_xlabel(x_label, fontsize=font_size)
-    ax.set_ylabel("Depth Index (global)", fontsize=font_size)
+    ax.set_ylabel("Pixel index", fontsize=font_size)
     ax.tick_params(axis="both", labelsize=font_size)
+
+    # === NEW: Top x-axis with pixel index (like plot_mosaic) ===
+    if x_in_meters:
+        # bottom: meters, top: pixel index
+        def m_to_px(x):
+            return (x - xmin) / global_dx
+
+        def px_to_m(p):
+            return xmin + p * global_dx
+
+        top = ax.secondary_xaxis("top", functions=(m_to_px, px_to_m))
+    else:
+        # already in pixels; just mirror
+        def px_identity(p):
+            return p
+
+        top = ax.secondary_xaxis("top", functions=(px_identity, px_identity))
+
+    top.set_xlabel("Pixel index", fontsize=font_size)
+    top.tick_params(labelsize=font_size)
+    # ==========================================================
 
     # Right y-axis: depth in meters
     def idx_to_m(y_idx):
@@ -75,7 +98,7 @@ def _plot_uncertainty_map_png(
         return 0 if abs(denom) < 1e-12 else (y_m - y_top_m) * (n_rows_total - 1) / denom
 
     right = ax.secondary_yaxis("right", functions=(idx_to_m, m_to_idx))
-    right.set_ylabel("Depth (m)", fontsize=font_size)
+    right.set_ylabel("Depth NAP (m)", fontsize=font_size)
     right.tick_params(labelsize=font_size)
 
     plt.title(title, fontsize=font_size)
@@ -236,7 +259,7 @@ def run_leaveout_uncertainty(
     )
 
     # Optional: plot PNG for quick inspection
-    sigma_png = output_folder / "leaveout_sigma_map.png"
+    sigma_png = output_folder / "leaveout_sigma_map.svg"
 
     coords_df = None
     try:
@@ -256,7 +279,7 @@ def run_leaveout_uncertainty(
         xmax=None,
         coords=coords_df,
         show_cpt_locations=True,
-        font_size=10,
+        font_size=config.PLOT_FONT_SIZE,
     )
     log(f"Saved sigma PNG: {sigma_png}")
 
