@@ -1,0 +1,417 @@
+{
+    "triangle_id": "nen5104_lutum_silt_sand",
+    "coordinate_system": {
+        "components": [
+            "sand",
+            "silt",
+            "lutum"
+        ],
+        "unit": "percent",
+        "sum": 100
+    },
+    "source": {
+        "document": "NEN 5104",
+        "figure": "Figuur 4 - Indeling van de lutum-silt-zanddriehoek",
+        "reference_file": "NEN5104_Sept_1989_Geotechniek_Classificatie_van_onverh_grondmonsters.pdf",
+        "names_table": "Tabel 4 - Benaming van mengsels in de lutum-silt-zanddriehoek volgens figuur 4"
+    },
+    "digitization_note": "Grid line values (lutum: 0,5,8,12,17.5,25,35,50,100; silt: 0,50,65,75,100; sand: 0,15,50,67.5,82.5,90,100) were provided directly by the user after reading the source figure. Polygon assignment was derived from the NEN main-name rule (klei: lutum>=8; leem: lutum<8 and sand<50; zand: sand>=50 and lutum<8) plus the user-confirmed sand=15 split point, and verified by checking that every polygon edge matches its neighbor exactly with no gaps. The Lz1/Lz3 divider is a non-grid special line explicitly given by the user.",
+    "polygons": [
+        {
+            "code": "Ks1",
+            "dutch_name": "klei, zwak siltig",
+            "english_name": "Clay, slightly silty",
+            "main_group": "klei",
+            "vertices": [
+                {
+                    "sand": 50,
+                    "silt": 0,
+                    "lutum": 50
+                },
+                {
+                    "sand": 0,
+                    "silt": 50,
+                    "lutum": 50
+                },
+                {
+                    "sand": 0,
+                    "silt": 0,
+                    "lutum": 100
+                }
+            ],
+            "source_note": "lutum 50-100, full width"
+        },
+        {
+            "code": "Ks2",
+            "dutch_name": "klei, matig siltig",
+            "english_name": "Clay, moderately silty",
+            "main_group": "klei",
+            "vertices": [
+                {
+                    "sand": 65,
+                    "silt": 0,
+                    "lutum": 35
+                },
+                {
+                    "sand": 50,
+                    "silt": 0,
+                    "lutum": 50
+                },
+                {
+                    "sand": 0,
+                    "silt": 50,
+                    "lutum": 50
+                },
+                {
+                    "sand": 0,
+                    "silt": 65,
+                    "lutum": 35
+                }
+            ],
+            "source_note": "lutum 35-50, full width"
+        },
+        {
+            "code": "Ks3",
+            "dutch_name": "klei, sterk siltig",
+            "english_name": "Clay, strongly silty",
+            "main_group": "klei",
+            "vertices": [
+                {
+                    "sand": 75,
+                    "silt": 0,
+                    "lutum": 25
+                },
+                {
+                    "sand": 65,
+                    "silt": 0,
+                    "lutum": 35
+                },
+                {
+                    "sand": 0,
+                    "silt": 65,
+                    "lutum": 35
+                },
+                {
+                    "sand": 0,
+                    "silt": 75,
+                    "lutum": 25
+                }
+            ],
+            "source_note": "lutum 25-35, full width"
+        },
+        {
+            "code": "Ks4",
+            "dutch_name": "klei, uiterst siltig",
+            "english_name": "Clay, extremely silty",
+            "main_group": "klei",
+            "vertices": [
+                {
+                    "sand": 50,
+                    "silt": 25,
+                    "lutum": 25
+                },
+                {
+                    "sand": 50,
+                    "silt": 42,
+                    "lutum": 8
+                },
+                {
+                    "sand": 0,
+                    "silt": 75,
+                    "lutum": 25
+                }
+            ],
+            "source_note": "triangle bounded by the lutum=25 line (sand 0-50), the sand=50 line (lutum 8-25), and a special diagonal from (0,75,25) to (50,42,8)"
+        },
+        {
+            "code": "Kz1",
+            "dutch_name": "klei, zwak zandig",
+            "english_name": "Clay, slightly sandy",
+            "main_group": "klei",
+            "vertices": [
+                {
+                    "sand": 50,
+                    "silt": 32.5,
+                    "lutum": 17.5
+                },
+                {
+                    "sand": 82.5,
+                    "silt": 0,
+                    "lutum": 17.5
+                },
+                {
+                    "sand": 75,
+                    "silt": 0,
+                    "lutum": 25
+                },
+                {
+                    "sand": 50,
+                    "silt": 25,
+                    "lutum": 25
+                }
+            ],
+            "source_note": "lutum 17.5-25, sand 50-82.5 (sand-dominant side of the split); left boundary capped at the sand=50 line"
+        },
+        {
+            "code": "Kz2",
+            "dutch_name": "klei, matig zandig",
+            "english_name": "Clay, moderately sandy",
+            "main_group": "klei",
+            "vertices": [
+                {
+                    "sand": 88,
+                    "silt": 0,
+                    "lutum": 12
+                },
+                {
+                    "sand": 82.5,
+                    "silt": 0,
+                    "lutum": 17.5
+                },
+                {
+                    "sand": 50,
+                    "silt": 32.5,
+                    "lutum": 17.5
+                },
+                {
+                    "sand": 50,
+                    "silt": 38,
+                    "lutum": 12
+                }
+            ],
+            "source_note": "lutum 12-17.5, sand 50-88; left boundary capped at the sand=50 line"
+        },
+        {
+            "code": "Kz3",
+            "dutch_name": "klei, sterk zandig",
+            "english_name": "Clay, strongly sandy",
+            "main_group": "klei",
+            "vertices": [
+                {
+                    "sand": 92,
+                    "silt": 0,
+                    "lutum": 8
+                },
+                {
+                    "sand": 88,
+                    "silt": 0,
+                    "lutum": 12
+                },
+                {
+                    "sand": 50,
+                    "silt": 38,
+                    "lutum": 12
+                },
+                {
+                    "sand": 50,
+                    "silt": 42,
+                    "lutum": 8
+                }
+            ],
+            "source_note": "lutum 8-12, sand 50-92; left boundary capped at the sand=50 line"
+        },
+        {
+            "code": "Lz1",
+            "dutch_name": "leem, zwak zandig",
+            "english_name": "Loam, slightly sandy",
+            "main_group": "leem",
+            "vertices": [
+                {
+                    "sand": 0,
+                    "silt": 100,
+                    "lutum": 0
+                },
+                {
+                    "sand": 15,
+                    "silt": 85,
+                    "lutum": 0
+                },
+                {
+                    "sand": 15,
+                    "silt": 65.1,
+                    "lutum": 19.9
+                },
+                {
+                    "sand": 0,
+                    "silt": 75,
+                    "lutum": 25
+                }
+            ],
+            "source_note": "bounded by the bottom edge (sand 0-15), the sand=15 line, the special divider line LL from (0,75,25) to (50,42,8), and the sand=0 edge (lutum 0-25)"
+        },
+        {
+            "code": "Lz3",
+            "dutch_name": "leem, sterk zandig",
+            "english_name": "Loam, strongly sandy",
+            "main_group": "leem",
+            "vertices": [
+                {
+                    "sand": 15,
+                    "silt": 85,
+                    "lutum": 0
+                },
+                {
+                    "sand": 50,
+                    "silt": 50,
+                    "lutum": 0
+                },
+                {
+                    "sand": 50,
+                    "silt": 42,
+                    "lutum": 8
+                },
+                {
+                    "sand": 15,
+                    "silt": 65.1,
+                    "lutum": 19.9
+                }
+            ],
+            "source_note": "leem, sand-high side; combines the original Lz3 triangle with the area vacated by the Lz1/Ks4 rework, bounded by the bottom edge (sand 15-50), the sand=50 line (lutum 0-8), the special divider LL, and the sand=15 line"
+        },
+        {
+            "code": "Zk",
+            "dutch_name": "zand, kleiig",
+            "english_name": "Sand, clayey",
+            "main_group": "zand",
+            "vertices": [
+                {
+                    "sand": 82.5,
+                    "silt": 12.5,
+                    "lutum": 5
+                },
+                {
+                    "sand": 95,
+                    "silt": 0,
+                    "lutum": 5
+                },
+                {
+                    "sand": 92,
+                    "silt": 0,
+                    "lutum": 8
+                },
+                {
+                    "sand": 82.5,
+                    "silt": 9.5,
+                    "lutum": 8
+                }
+            ],
+            "source_note": "zand, lutum 5-8, sand 82.5-95/92 (only above Zs1/Zs2); left boundary capped at the sand=82.5 line"
+        },
+        {
+            "code": "Zs1",
+            "dutch_name": "zand, zwak siltig",
+            "english_name": "Sand, slightly silty",
+            "main_group": "zand",
+            "vertices": [
+                {
+                    "sand": 90,
+                    "silt": 10,
+                    "lutum": 0
+                },
+                {
+                    "sand": 100,
+                    "silt": 0,
+                    "lutum": 0
+                },
+                {
+                    "sand": 95,
+                    "silt": 0,
+                    "lutum": 5
+                },
+                {
+                    "sand": 90,
+                    "silt": 5,
+                    "lutum": 5
+                }
+            ],
+            "source_note": "zand, lutum 0-5, sand 90-100"
+        },
+        {
+            "code": "Zs2",
+            "dutch_name": "zand, matig siltig",
+            "english_name": "Sand, moderately silty",
+            "main_group": "zand",
+            "vertices": [
+                {
+                    "sand": 82.5,
+                    "silt": 17.5,
+                    "lutum": 0
+                },
+                {
+                    "sand": 90,
+                    "silt": 10,
+                    "lutum": 0
+                },
+                {
+                    "sand": 90,
+                    "silt": 5,
+                    "lutum": 5
+                },
+                {
+                    "sand": 82.5,
+                    "silt": 12.5,
+                    "lutum": 5
+                }
+            ],
+            "source_note": "zand, lutum 0-5, sand 82.5-90"
+        },
+        {
+            "code": "Zs3",
+            "dutch_name": "zand, sterk siltig",
+            "english_name": "Sand, strongly silty",
+            "main_group": "zand",
+            "vertices": [
+                {
+                    "sand": 67.5,
+                    "silt": 32.5,
+                    "lutum": 0
+                },
+                {
+                    "sand": 82.5,
+                    "silt": 17.5,
+                    "lutum": 0
+                },
+                {
+                    "sand": 82.5,
+                    "silt": 9.5,
+                    "lutum": 8
+                },
+                {
+                    "sand": 67.5,
+                    "silt": 24.5,
+                    "lutum": 8
+                }
+            ],
+            "source_note": "zand, lutum 0-8, sand 67.5-82.5; extended upward to lutum=8 to fill the space vacated by Zk"
+        },
+        {
+            "code": "Zs4",
+            "dutch_name": "zand, uiterst siltig",
+            "english_name": "Sand, extremely silty",
+            "main_group": "zand",
+            "vertices": [
+                {
+                    "sand": 50,
+                    "silt": 50,
+                    "lutum": 0
+                },
+                {
+                    "sand": 67.5,
+                    "silt": 32.5,
+                    "lutum": 0
+                },
+                {
+                    "sand": 67.5,
+                    "silt": 24.5,
+                    "lutum": 8
+                },
+                {
+                    "sand": 50,
+                    "silt": 42,
+                    "lutum": 8
+                }
+            ],
+            "source_note": "zand, lutum 0-8, sand 50-67.5; extended upward to lutum=8 to fill the space vacated by Zk"
+        }
+    ]
+}
