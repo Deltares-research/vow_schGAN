@@ -90,8 +90,8 @@ def main():
     # 9. Points on known shared edges return on_boundary with both candidates.
     boundary_cases = [
         ((25, 25, 50), {"Ks1", "Ks2"}),  # midpoint of the Ks1/Ks2 edge
-        ((50, 42, 8), {"Lz1", "Lz3", "Zk"}),  # 3-way vertex
-        ((15, 63.75, 21.25), {"Ks4", "Kz1"}),  # midpoint of the sand=15 split line
+        ((50, 42, 8), {"Ks4", "Kz3", "Lz3", "Zs4"}),  # 4-way junction (post Zk/Zs3/Zs4 rework)
+        ((50, 25, 25), {"Ks3", "Ks4", "Kz1"}),  # 3-way junction (post Ks4/Kz1 rework)
     ]
     for (sand, silt, lutum), expected in boundary_cases:
         result = classify_composition(sand, silt, lutum)

@@ -1,22 +1,35 @@
-"""Visualization for the NEN 5104 lutum-silt-zand classification triangle.
+"""Generic ternary-triangle visualization (matplotlib + Plotly).
 
-Colors distinguish classification areas only (no gradient, no Ic scale).
+None of the geometry/layout logic in this module references specific
+component names (e.g. sand/silt/lutum): corner labels, axis captions,
+legend text, and hover wording are all derived from a `TriangleDefinition`.
+Only `_COLORS` (fill colors keyed by NEN class code) and the
+`plot_nen_triangle*` wrapper functions are NEN-specific; they simply call
+the generic `plot_triangle*` functions with the default NEN triangle.
 """
 
 import logging
+import sys
 from pathlib import Path
-from typing import Optional
+from typing import Dict, Optional
 
 import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon as MplPolygon
 
-from .classification import get_polygons, classify_composition
-from .coordinates import ternary_to_cartesian, cartesian_to_ternary
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # add src/ to sys.path
+
+from modules.NEN_graph.classification import (  # noqa: E402
+    classify_composition_generic,
+    get_nen_triangle,
+    get_triangle_polygons,
+)
+from modules.NEN_graph.coordinates import cartesian_to_composition, composition_to_cartesian  # noqa: E402
+from modules.NEN_graph.triangle_definition import TriangleDefinition  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
 # Light, qualitative colors grouped by main soil group (klei/leem/zand).
-# These distinguish classes only; they do not encode any numeric scale.
+# NEN-specific: these distinguish classes only; they do not encode any numeric scale.
 _COLORS = {
     "Ks1": "#c6dbef", "Ks2": "#9ecae1", "Ks3": "#6baed6", "Ks4": "#4292c6",
     "Kz1": "#c7e9c0", "Kz2": "#a1d99b", "Kz3": "#74c476",
@@ -25,69 +38,146 @@ _COLORS = {
     "Zs3": "#fd8d3c", "Zs4": "#e6550d",
 }
 
+# Deterministic qualitative fallback palette (ColorBrewer Set3 + Paired),
+# used when a generic triangle is plotted without an explicit color map.
+_DEFAULT_PALETTE = [
+    "#8dd3c7", "#ffffb3", "#bebada", "#fb8072", "#80b1d3", "#fdb462",
+    "#b3de69", "#fccde5", "#d9d9d9", "#bc80bd", "#ccebc5", "#ffed6f",
+    "#1f78b4", "#33a02c", "#e31a1c", "#ff7f00", "#6a3d9a", "#b15928",
+]
 
-def _ternary_gridlines(step: int = 10):
+# Structural (opposite_corner, label_corner, other_corner) triples for the
+# triangle's three edges. Purely geometric - independent of component names.
+_EDGE_CORNERS = [
+    ("top", "left", "right"),    # edge opposite the top corner (the "bottom" edge)
+    ("right", "top", "left"),    # edge opposite the right corner (the "left" edge)
+    ("left", "right", "top"),    # edge opposite the left corner (the "right" edge)
+]
+
+_MPL_TICK_STYLE = {
+    "top":   {"dx": 0.0,    "dy": -1.0, "ha": "center", "va": "top",    "rotation": 0},
+    "right": {"dx": -0.866, "dy": 0.5,  "ha": "right",  "va": "center", "rotation": 60},
+    "left":  {"dx": 0.866,  "dy": 0.5,  "ha": "left",   "va": "center", "rotation": -60},
+}
+_MPL_TITLE_STYLE = {
+    "top":   {"xy": (0.5, -0.14),            "rotation": 0,   "va": "top"},
+    "right": {"xy": (-0.20, 0.5 * 0.866 / 2), "rotation": 60,  "va": "center"},
+    "left":  {"xy": (1.20, 0.5 * 0.866 / 2),  "rotation": -60, "va": "center"},
+}
+
+_PLOTLY_TICK_STYLE = {
+    "top":   {"dx": 0.0,    "dy": -0.035, "yanchor": "top"},
+    "right": {"dx": -0.035, "dy": 0.02,   "xanchor": "right", "textangle": 60},
+    "left":  {"dx": 0.035,  "dy": 0.02,   "xanchor": "left",  "textangle": -60},
+}
+_PLOTLY_TITLE_STYLE = {
+    "top":   {"xy": (0.5, -0.16),  "textangle": 0},
+    "right": {"xy": (-0.24, 0.22), "textangle": 60},
+    "left":  {"xy": (1.24, 0.22),  "textangle": -60},
+}
+
+
+def _resolve_colors(triangle: TriangleDefinition, colors: Optional[Dict[str, str]]) -> Dict[str, str]:
+    """Return a code -> hex-color mapping; a deterministic fallback when `colors` is None."""
+    if colors is not None:
+        return colors
+    return {poly.code: _DEFAULT_PALETTE[i % len(_DEFAULT_PALETTE)] for i, poly in enumerate(triangle.polygons)}
+
+
+def _classification_label(triangle: TriangleDefinition) -> str:
+    return triangle.metadata.get("classification_label", "Classification")
+
+
+def _format_readout(composition: Dict[str, float], triangle: TriangleDefinition, result: dict) -> str:
+    """Build a multi-line "<label>: <value>%" readout, ending with the classification."""
+    lines = [f"{triangle.label_for(k)}: {composition[k]:.1f}%" for k in triangle.component_keys]
+    if result["status"] == "inside":
+        label = f"{result['class_code']} ({result['class_name']})"
+    elif result["status"] == "on_boundary":
+        label = "boundary: " + ", ".join(result["candidate_classes"])
+    else:
+        label = result["status"]
+    lines.append(f"{_classification_label(triangle)}: {label}")
+    return "\n".join(lines)
+
+
+def _gridlines(triangle: TriangleDefinition, step: int = 10):
     """Cartesian line segments for the full ternary background grid.
 
-    Yields, for each of the three components, the interior lines of
-    constant value (excluding 0/100 which coincide with the outer edges).
-    Each line is parallel to the edge opposite that component's vertex.
+    For each component, yields the interior lines of constant value
+    (excluding 0/total, which coincide with the outer edges). Each line is
+    parallel to the edge opposite that component's corner.
     """
+    keys = triangle.component_keys
+    total = triangle.total
+    n = int(round(total / step))
     lines = []
-    for s in range(step, 100, step):
-        lines.append((ternary_to_cartesian(s, 100 - s, 0), ternary_to_cartesian(s, 0, 100 - s)))
-    for si in range(step, 100, step):
-        lines.append((ternary_to_cartesian(100 - si, si, 0), ternary_to_cartesian(0, si, 100 - si)))
-    for l in range(step, 100, step):
-        lines.append((ternary_to_cartesian(100 - l, 0, l), ternary_to_cartesian(0, 100 - l, l)))
+    for v in keys:
+        others = [k for k in keys if k != v]
+        for i in range(1, n):
+            s = i * step
+            comp_a = {v: s, others[0]: total - s, others[1]: 0}
+            comp_b = {v: s, others[0]: 0, others[1]: total - s}
+            lines.append((composition_to_cartesian(comp_a, triangle), composition_to_cartesian(comp_b, triangle)))
     return lines
 
 
-def _add_ternary_grid(ax, step: int = 10):
+def _add_ternary_grid(ax, triangle: TriangleDefinition, step: int = 10):
     """Draw the full ternary grid lightly behind the classification polygons."""
-    for (x0, y0), (x1, y1) in _ternary_gridlines(step):
+    for (x0, y0), (x1, y1) in _gridlines(triangle, step):
         ax.plot([x0, x1], [y0, y1], color="gray", linewidth=0.5, alpha=0.5, zorder=0)
 
 
-def _add_axis_ticks(ax, step: int = 10):
-    """Draw percentage tick marks (0-100) and labels along each edge."""
-    tick_len = 0.02
-    for s in range(0, 101, step):
-        x, y = ternary_to_cartesian(s, 100 - s, 0)  # bottom edge (lutum=0)
-        ax.plot([x, x], [y, y - tick_len], color="black", linewidth=0.8)
-        ax.text(x, y - tick_len * 2.2, str(s), ha="center", va="top", fontsize=7)
-    for l in range(0, 101, step):
-        x, y = ternary_to_cartesian(100 - l, 0, l)  # left edge (silt=0)
-        dx, dy = -tick_len * 0.866, tick_len * 0.5
-        ax.plot([x, x + dx], [y, y + dy], color="black", linewidth=0.8)
-        ax.text(x + dx * 2.2, y + dy * 2.2, str(l), ha="right", va="center", fontsize=7, rotation=60)
-    for si in range(0, 101, step):
-        x, y = ternary_to_cartesian(0, si, 100 - si)  # right edge (sand=0)
-        dx, dy = tick_len * 0.866, tick_len * 0.5
-        ax.plot([x, x + dx], [y, y + dy], color="black", linewidth=0.8)
-        ax.text(x + dx * 2.2, y + dy * 2.2, str(si), ha="left", va="center", fontsize=7, rotation=-60)
+def _add_axis_ticks(ax, triangle: TriangleDefinition, step: int = 10, tick_len: float = 0.02):
+    """Draw percentage tick marks (0-total) and labels along each edge."""
+    total = triangle.total
+    n = int(round(total / step))
+    for opposite, label_corner, other_corner in _EDGE_CORNERS:
+        style = _MPL_TICK_STYLE[opposite]
+        opposite_key = triangle.component_by_corner(opposite).key
+        label_key = triangle.component_by_corner(label_corner).key
+        other_key = triangle.component_by_corner(other_corner).key
+        for i in range(0, n + 1):
+            t = i * step
+            x, y = composition_to_cartesian({opposite_key: 0, label_key: t, other_key: total - t}, triangle)
+            dx, dy = style["dx"] * tick_len, style["dy"] * tick_len
+            ax.plot([x, x + dx], [y, y + dy], color="black", linewidth=0.8)
+            ax.text(
+                x + dx * 2.2, y + dy * 2.2, str(int(t)),
+                ha=style["ha"], va=style["va"], fontsize=7, rotation=style["rotation"],
+            )
 
 
-def _add_axis_labels(ax):
-    ax.text(0.5, -0.14, "sand (%)", ha="center", va="top", fontsize=11)
-    ax.text(-0.20, 0.5 * 0.866 / 2, "lutum (%)", ha="center", va="center", fontsize=11, rotation=60)
-    ax.text(1.20, 0.5 * 0.866 / 2, "silt (%)", ha="center", va="center", fontsize=11, rotation=-60)
+def _add_axis_labels(ax, triangle: TriangleDefinition):
+    for opposite, label_corner, _other in _EDGE_CORNERS:
+        style = _MPL_TITLE_STYLE[opposite]
+        label = triangle.label_for(triangle.component_by_corner(label_corner).key)
+        x, y = style["xy"]
+        ax.text(x, y, f"{label} (%)", ha="center", va=style["va"], fontsize=11, rotation=style["rotation"])
 
 
-def plot_nen_triangle(
+def plot_triangle(
+    triangle: TriangleDefinition,
     ax: Optional[plt.Axes] = None,
+    colors: Optional[Dict[str, str]] = None,
     show_legend: bool = True,
-    label_lang: str = "english",
+    name_field: str = "english_name",
     interactive: bool = True,
+    grid_step: int = 10,
 ):
-    """Draw the NEN 5104 classification triangle.
+    """Draw an arbitrary ternary classification triangle.
 
     Args:
+        triangle (TriangleDefinition): the triangle to draw.
         ax (matplotlib.axes.Axes, optional): axes to draw on; a new figure
             is created if not given.
+        colors (dict, optional): class code -> hex color; a deterministic
+            fallback palette is used when omitted.
         show_legend (bool): whether to draw the code -> name legend.
-        label_lang (str): "english" or "dutch", which name to use in the legend.
-        interactive (bool): attach a hover readout (sand/silt/lutum/class/status).
+        name_field (str): polygon attribute to use for legend text
+            ("english_name" or "dutch_name" for the NEN dataset).
+        interactive (bool): attach a hover readout (composition + class + status).
+        grid_step (int): spacing (in `triangle.total` units) of the background grid.
 
     Returns:
         matplotlib.figure.Figure: the figure containing the plot.
@@ -100,11 +190,12 @@ def plot_nen_triangle(
     outer = [(0.0, 0.0), (1.0, 0.0), (0.5, 0.5 * (3 ** 0.5))]
     ax.add_patch(MplPolygon(outer, closed=True, fill=False, edgecolor="black", linewidth=1.5, zorder=5))
 
-    _add_ternary_grid(ax)
+    _add_ternary_grid(ax, triangle, grid_step)
 
-    polygons = get_polygons()
+    polygons = get_triangle_polygons(triangle)
+    palette = _resolve_colors(triangle, colors)
     for code, poly in polygons.items():
-        color = _COLORS.get(code, "#dddddd")
+        color = palette.get(code, "#dddddd")
         patch = MplPolygon(
             poly.cartesian_vertices, closed=True, facecolor=color,
             edgecolor="black", linewidth=0.8, alpha=0.6, zorder=1,
@@ -113,31 +204,30 @@ def plot_nen_triangle(
         cx, cy = poly.shapely_polygon.representative_point().coords[0]
         ax.text(cx, cy, code, ha="center", va="center", fontsize=9, fontweight="bold", zorder=6)
 
-    _add_axis_ticks(ax)
-    _add_axis_labels(ax)
+    _add_axis_ticks(ax, triangle, grid_step)
+    _add_axis_labels(ax, triangle)
 
     if show_legend:
-        name_attr = "english_name" if label_lang == "english" else "dutch_name"
         handles = [
-            plt.Rectangle((0, 0), 1, 1, facecolor=_COLORS.get(code, "#dddddd"), edgecolor="black")
+            plt.Rectangle((0, 0), 1, 1, facecolor=palette.get(code, "#dddddd"), edgecolor="black")
             for code in polygons
         ]
-        labels = [f"{code} - {getattr(poly, name_attr)}" for code, poly in polygons.items()]
+        labels = [f"{code} - {getattr(poly, name_field)}" for code, poly in polygons.items()]
         ax.legend(handles, labels, loc="upper left", bbox_to_anchor=(1.22, 1.0), fontsize=8, frameon=True)
 
     ax.set_xlim(-0.30, 1.30)
     ax.set_ylim(-0.20, 1.0)
     ax.set_aspect("equal")
     ax.axis("off")
-    ax.set_title("NEN 5104 - lutum-silt-zand classification triangle")
+    ax.set_title(triangle.metadata.get("title", triangle.triangle_id))
 
     if interactive:
-        _attach_hover_readout(fig, ax)
+        _attach_hover_readout(fig, ax, triangle)
 
     return fig
 
 
-def _attach_hover_readout(fig, ax):
+def _attach_hover_readout(fig, ax, triangle: TriangleDefinition):
     """Attach a motion-notify handler showing composition + classification."""
     annotation = ax.annotate(
         "", xy=(0, 0), xytext=(0.5, 1.02), textcoords="data",
@@ -151,15 +241,9 @@ def _attach_hover_readout(fig, ax):
             annotation.set_visible(False)
             fig.canvas.draw_idle()
             return
-        sand, silt, lutum = cartesian_to_ternary(event.xdata, event.ydata)
-        result = classify_composition(sand, silt, lutum)
-        if result["status"] == "inside":
-            text = f"sand={sand:.1f} silt={silt:.1f} lutum={lutum:.1f}\n{result['class_code']} ({result['class_name']})"
-        elif result["status"] == "on_boundary":
-            text = f"sand={sand:.1f} silt={silt:.1f} lutum={lutum:.1f}\non boundary: {', '.join(result['candidate_classes'])}"
-        else:
-            text = f"sand={sand:.1f} silt={silt:.1f} lutum={lutum:.1f}\n{result['status']}"
-        annotation.set_text(text)
+        composition = cartesian_to_composition(event.xdata, event.ydata, triangle)
+        result = classify_composition_generic(composition, triangle)
+        annotation.set_text(_format_readout(composition, triangle, result))
         annotation.set_visible(True)
         fig.canvas.draw_idle()
 
@@ -173,7 +257,7 @@ def _hex_to_rgba(hex_color: str, alpha: float) -> str:
     return f"rgba({r},{g},{b},{alpha})"
 
 
-def _build_hover_script(div_id: str, polygons, name_attr: str) -> str:
+def _build_hover_script(div_id: str, polygons, name_field: str, triangle: TriangleDefinition) -> str:
     """JS snippet giving a pixel-accurate (non-snapping) coordinate/class readout.
 
     Rather than relying on Plotly's hover system (which always snaps to the
@@ -182,23 +266,38 @@ def _build_hover_script(div_id: str, polygons, name_attr: str) -> str:
     mapping, then classifies the point client-side against the same polygon
     geometry used by the Python backend. The readout is a plain floating
     HTML overlay div updated on every mousemove, so it is fully continuous.
+
+    The embedded JS contains no assumptions about specific component names:
+    component keys/labels, the corner assignment, the total, and the
+    classification label are all embedded as data read from `triangle`.
     """
     import json
 
     polys_js = [
         {
             "code": code,
-            "name": f"{code} - {getattr(poly, name_attr)}",
+            "name": f"{code} - {getattr(poly, name_field)}",
             "verts": [[round(x, 6), round(y, 6)] for x, y in poly.cartesian_vertices],
         }
         for code, poly in polygons.items()
     ]
+    components_js = [{"key": c.key, "label": c.label} for c in triangle.components]
+    corner_keys_js = {c.corner: c.key for c in triangle.components}
+
     polys_json = json.dumps(polys_js)
+    components_json = json.dumps(components_js)
+    corner_keys_json = json.dumps(corner_keys_js)
+    classification_label_json = json.dumps(_classification_label(triangle))
+    total_json = json.dumps(triangle.total)
 
     return f"""
     (function() {{
         var gd = document.getElementById('{div_id}');
         var polys = {polys_json};
+        var components = {components_json};
+        var cornerKeys = {corner_keys_json};
+        var classificationLabel = {classification_label_json};
+        var TOTAL = {total_json};
         var TOL = 0.003;
 
         var overlay = document.createElement('div');
@@ -257,11 +356,15 @@ def _build_hover_script(div_id: str, polygons, name_attr: str) -> str:
             return 'boundary: ' + candidates.map(function(p) {{ return p.code; }}).join(', ');
         }}
 
-        function cartesianToTernary(x, y) {{
-            var lutum = (y / (Math.sqrt(3) / 2)) * 100;
-            var silt = x * 100 - 0.5 * lutum;
-            var sand = 100 - silt - lutum;
-            return [sand, silt, lutum];
+        function cartesianToComposition(x, y) {{
+            var wTop = y / (Math.sqrt(3) / 2);
+            var wRight = x - 0.5 * wTop;
+            var wLeft = 1 - wRight - wTop;
+            var comp = {{}};
+            comp[cornerKeys.left] = wLeft * TOTAL;
+            comp[cornerKeys.right] = wRight * TOTAL;
+            comp[cornerKeys.top] = wTop * TOTAL;
+            return comp;
         }}
 
         gd.addEventListener('mousemove', function(evt) {{
@@ -280,10 +383,14 @@ def _build_hover_script(div_id: str, polygons, name_attr: str) -> str:
                 return;
             }}
 
-            var comp = cartesianToTernary(x, y);
-            var sand = comp[0].toFixed(1), silt = comp[1].toFixed(1), lutum = comp[2].toFixed(1);
-            var label = classify(x, y);
-            overlay.innerHTML = 'sand: ' + sand + '%<br>silt: ' + silt + '%<br>lutum: ' + lutum + '%<br>' + label;
+            var comp = cartesianToComposition(x, y);
+            var lines = [];
+            for (var k = 0; k < components.length; k++) {{
+                var c = components[k];
+                lines.push(c.label + ': ' + comp[c.key].toFixed(1) + '%');
+            }}
+            lines.push(classificationLabel + ': ' + classify(x, y));
+            overlay.innerHTML = lines.join('<br>');
             overlay.style.left = (evt.clientX - rect.left + 14) + 'px';
             overlay.style.top = (evt.clientY - rect.top + 14) + 'px';
             overlay.style.display = 'block';
@@ -296,58 +403,73 @@ def _build_hover_script(div_id: str, polygons, name_attr: str) -> str:
     """
 
 
-def _add_plotly_axis_ticks(fig, step: int = 10):
+def _add_plotly_axis_ticks(fig, triangle: TriangleDefinition, step: int = 10):
     """Add percentage tick labels and axis titles along each edge."""
-    for s in range(0, 101, step):
-        x, y = ternary_to_cartesian(s, 100 - s, 0)  # bottom edge (lutum=0)
-        fig.add_annotation(x=x, y=y - 0.035, text=str(s), showarrow=False, font=dict(size=10), yanchor="top")
-    for l in range(0, 101, step):
-        x, y = ternary_to_cartesian(100 - l, 0, l)  # left edge (silt=0)
+    total = triangle.total
+    n = int(round(total / step))
+    for opposite, label_corner, other_corner in _EDGE_CORNERS:
+        style = _PLOTLY_TICK_STYLE[opposite]
+        opposite_key = triangle.component_by_corner(opposite).key
+        label_key = triangle.component_by_corner(label_corner).key
+        other_key = triangle.component_by_corner(other_corner).key
+        for i in range(0, n + 1):
+            t = i * step
+            x, y = composition_to_cartesian({opposite_key: 0, label_key: t, other_key: total - t}, triangle)
+            kwargs = dict(x=x + style["dx"], y=y + style["dy"], text=str(int(t)), showarrow=False, font=dict(size=10))
+            if "yanchor" in style:
+                kwargs["yanchor"] = style["yanchor"]
+            if "xanchor" in style:
+                kwargs["xanchor"] = style["xanchor"]
+            if "textangle" in style:
+                kwargs["textangle"] = style["textangle"]
+            fig.add_annotation(**kwargs)
+
+    for opposite, label_corner, _other in _EDGE_CORNERS:
+        style = _PLOTLY_TITLE_STYLE[opposite]
+        label = triangle.label_for(triangle.component_by_corner(label_corner).key)
+        x, y = style["xy"]
         fig.add_annotation(
-            x=x - 0.035, y=y + 0.02, text=str(l), showarrow=False,
-            font=dict(size=10), textangle=60, xanchor="right",
+            x=x, y=y, text=f"{label} (%)", showarrow=False,
+            font=dict(size=13), textangle=style["textangle"],
         )
-    for si in range(0, 101, step):
-        x, y = ternary_to_cartesian(0, si, 100 - si)  # right edge (sand=0)
-        fig.add_annotation(
-            x=x + 0.035, y=y + 0.02, text=str(si), showarrow=False,
-            font=dict(size=10), textangle=-60, xanchor="left",
-        )
-    fig.add_annotation(x=0.5, y=-0.16, text="sand (%)", showarrow=False, font=dict(size=13))
-    fig.add_annotation(x=-0.24, y=0.22, text="lutum (%)", showarrow=False, font=dict(size=13), textangle=60)
-    fig.add_annotation(x=1.24, y=0.22, text="silt (%)", showarrow=False, font=dict(size=13), textangle=-60)
 
 
-def plot_nen_triangle_plotly(
+def plot_triangle_plotly(
+    triangle: TriangleDefinition,
     output_path: Optional[Path] = None,
+    colors: Optional[Dict[str, str]] = None,
     grid_step: int = 10,
-    label_lang: str = "english",
+    name_field: str = "english_name",
 ):
-    """Build an interactive Plotly version of the NEN 5104 triangle and save it as HTML.
+    """Build an interactive Plotly version of an arbitrary ternary triangle and save it as HTML.
 
     The full ternary grid is drawn lightly behind the (semi-transparent)
     classification polygons. A small JS snippet embedded in the saved HTML
     tracks the raw mouse pixel position (via Plotly's own axis pixel<->data
     mapping) and classifies it client-side against the same polygon
-    geometry, giving a fully continuous sand/silt/lutum + classification
+    geometry, giving a fully continuous composition + classification
     readout with no snapping to a fixed sample grid.
 
     Args:
+        triangle (TriangleDefinition): the triangle to draw.
         output_path (Path, optional): where to write the HTML file. Defaults
-            to `nen5104_triangle_interactive.html` next to this module.
-        grid_step (int): spacing (in percent) of the background ternary grid.
-        label_lang (str): "english" or "dutch", which name to use in the legend.
+            to `<triangle_id>_interactive.html` next to this module.
+        colors (dict, optional): class code -> hex color; a deterministic
+            fallback palette is used when omitted.
+        grid_step (int): spacing (in `triangle.total` units) of the background grid.
+        name_field (str): polygon attribute to use for legend text.
 
     Returns:
         plotly.graph_objects.Figure: the interactive figure.
     """
     import plotly.graph_objects as go
 
-    polygons = get_polygons()
+    polygons = get_triangle_polygons(triangle)
+    palette = _resolve_colors(triangle, colors)
     fig = go.Figure()
-    div_id = "nen5104-triangle-plot"
+    div_id = triangle.triangle_id.replace("_", "-") + "-plot"
 
-    for (x0, y0), (x1, y1) in _ternary_gridlines(grid_step):
+    for (x0, y0), (x1, y1) in _gridlines(triangle, grid_step):
         fig.add_trace(go.Scatter(
             x=[x0, x1], y=[y0, y1], mode="lines",
             line=dict(color="lightgray", width=0.6),
@@ -360,24 +482,23 @@ def plot_nen_triangle_plotly(
         line=dict(color="black", width=2), hoverinfo="skip", showlegend=False,
     ))
 
-    name_attr = "english_name" if label_lang == "english" else "dutch_name"
     for code, poly in polygons.items():
         verts = poly.cartesian_vertices + [poly.cartesian_vertices[0]]
         fig.add_trace(go.Scatter(
             x=[v[0] for v in verts], y=[v[1] for v in verts],
             mode="lines", fill="toself",
-            fillcolor=_hex_to_rgba(_COLORS.get(code, "#dddddd"), 0.65),
+            fillcolor=_hex_to_rgba(palette.get(code, "#dddddd"), 0.65),
             line=dict(color="black", width=1),
-            name=f"{code} - {getattr(poly, name_attr)}",
+            name=f"{code} - {getattr(poly, name_field)}",
             hoverinfo="skip", showlegend=True,
         ))
         cx, cy = poly.shapely_polygon.representative_point().coords[0]
         fig.add_annotation(x=cx, y=cy, text=f"<b>{code}</b>", showarrow=False, font=dict(size=11, color="black"))
 
-    _add_plotly_axis_ticks(fig)
+    _add_plotly_axis_ticks(fig, triangle, grid_step)
 
     fig.update_layout(
-        title="NEN 5104 - lutum-silt-zand classification triangle",
+        title=triangle.metadata.get("title", triangle.triangle_id),
         xaxis=dict(visible=False, range=[-0.30, 1.35]),
         yaxis=dict(visible=False, range=[-0.20, 1.0], scaleanchor="x", scaleratio=1),
         plot_bgcolor="white",
@@ -388,20 +509,69 @@ def plot_nen_triangle_plotly(
     )
 
     if output_path is None:
-        output_path = Path(__file__).parent / "nen5104_triangle_interactive.html"
+        output_path = Path(__file__).parent / f"{triangle.triangle_id}_interactive.html"
     fig.write_html(
         str(output_path),
         div_id=div_id,
-        post_script=_build_hover_script(div_id, polygons, name_attr),
+        post_script=_build_hover_script(div_id, polygons, name_field, triangle),
     )
     return fig
 
 
+# --- Backward-compatible NEN 5104 sand/silt/lutum API -----------------------
+
+
+def plot_nen_triangle(
+    ax: Optional[plt.Axes] = None,
+    show_legend: bool = True,
+    label_lang: str = "english",
+    interactive: bool = True,
+):
+    """Backward-compatible: draw the NEN 5104 classification triangle.
+
+    Args:
+        ax (matplotlib.axes.Axes, optional): axes to draw on; a new figure
+            is created if not given.
+        show_legend (bool): whether to draw the code -> name legend.
+        label_lang (str): "english" or "dutch", which name to use in the legend.
+        interactive (bool): attach a hover readout (composition/class/status).
+
+    Returns:
+        matplotlib.figure.Figure: the figure containing the plot.
+    """
+    name_field = "english_name" if label_lang == "english" else "dutch_name"
+    return plot_triangle(
+        get_nen_triangle(), ax=ax, colors=_COLORS, show_legend=show_legend,
+        name_field=name_field, interactive=interactive,
+    )
+
+
+def plot_nen_triangle_plotly(
+    output_path: Optional[Path] = None,
+    grid_step: int = 10,
+    label_lang: str = "english",
+):
+    """Backward-compatible: build the interactive Plotly NEN 5104 triangle and save it as HTML.
+
+    Args:
+        output_path (Path, optional): where to write the HTML file. Defaults
+            to `nen5104_triangle_interactive.html` next to this module.
+        grid_step (int): spacing (in percent) of the background ternary grid.
+        label_lang (str): "english" or "dutch", which name to use in the legend.
+
+    Returns:
+        plotly.graph_objects.Figure: the interactive figure.
+    """
+    name_field = "english_name" if label_lang == "english" else "dutch_name"
+    if output_path is None:
+        output_path = Path(__file__).parent / "nen5104_triangle_interactive.html"
+    return plot_triangle_plotly(
+        get_nen_triangle(), output_path=output_path, colors=_COLORS,
+        grid_step=grid_step, name_field=name_field,
+    )
+
+
 if __name__ == "__main__":
-    import sys
-
-    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-
     out_path = Path(__file__).parent / "nen5104_triangle_render.png"
     figure = plot_nen_triangle(interactive=False)
     figure.savefig(out_path, dpi=200, bbox_inches="tight")
@@ -410,3 +580,4 @@ if __name__ == "__main__":
     html_path = Path(__file__).parent / "nen5104_triangle_interactive.html"
     plot_nen_triangle_plotly(output_path=html_path)
     print(f"Saved interactive render to {html_path}")
+

@@ -1,14 +1,25 @@
 {
-    "triangle_id": "nen5104_lutum_silt_sand",
-    "coordinate_system": {
-        "components": [
-            "sand",
-            "silt",
-            "lutum"
-        ],
-        "unit": "percent",
-        "sum": 100
-    },
+    "triangle_id": "nen5104_lutum_silt_zand",
+    "total": 100,
+    "components": [
+        {
+            "key": "sand",
+            "label": "Zand",
+            "corner": "left"
+        },
+        {
+            "key": "silt",
+            "label": "Silt",
+            "corner": "right"
+        },
+        {
+            "key": "lutum",
+            "label": "Lutum",
+            "corner": "top"
+        }
+    ],
+    "classification_label": "Classificatie",
+    "title": "NEN 5104 - lutum-silt-zand classification triangle",
     "source": {
         "document": "NEN 5104",
         "figure": "Figuur 4 - Indeling van de lutum-silt-zanddriehoek",
