@@ -1,386 +1,345 @@
 """Ic (soil behaviour type index) mapping for the NEN 5104 triangle.
 
-Two models are provided:
+This module builds ONE canonical, class-anchored, piecewise-linear
+"representative Ic" surface over the NEN 5104 lutum-silt-zand composition
+triangle. It replaces a series of earlier experimental models (an original
+three-corner interpolation, a per-polygon fan triangulation, a global
+Clough-Tocher cubic surface, and a constrained thin-plate-spline surface) -
+none of those are kept; there is exactly one method now.
 
-- `calculate_mean_ic_legacy_three_anchor`: the original three-corner linear
-  interpolation (kept only for comparison against the new model).
-- `calculate_mean_ic_class_constrained` (the default): a continuous,
-  piecewise-linear surface built from `IC_CLASS_MAPPING` (per-class target
-  Ic range/centre) and `IC_VERTEX_VALUES` (an explicit Ic value for every
-  NEN polygon vertex) - see `ClassConstrainedIcSurface`.
+Methodology
+-----------
+1. Representative Ic values (`IC_CLASS_TARGETS`) are assigned once per NEN
+   class - these are the "editable source of truth" for how the field
+   behaves near the middle of each polygon.
+2. Each class contributes ONE control point, placed at its polygon's
+   geometric area centroid (or, if the centroid does not lie strictly
+   inside the polygon - possible for concave shapes - at a deterministic
+   interior "representative point" instead; any such fallback is recorded
+   on `IcSurface.representative_point_fallbacks`).
+3. Every distinct NEN polygon vertex that lies on the OUTER triangle
+   perimeter (i.e. at least one component is ~0), excluding the three pure
+   corners, becomes a "perimeter anchor". Its Ic value is the arithmetic
+   mean of `IC_CLASS_TARGETS[code]` for every class whose polygon closure
+   touches that exact location (found the same way
+   `classify_composition_generic` finds "on_boundary" candidates - by
+   geometric distance, not by literal JSON vertex membership - so a class
+   whose edge merely passes through the point, without listing it as one
+   of its own vertices, is still included). Internal (non-perimeter) NEN
+   vertices are NOT used as interpolation controls in this method.
+4. The three pure-component corners get explicit, hand-set values
+   (`IC_CORNER_TARGETS`), which take precedence over the perimeter-anchor
+   averaging rule above.
+5. All control points (class representatives + perimeter anchors +
+   corners) are converted to Cartesian coordinates and fed, together, into
+   ONE global `scipy.spatial.Delaunay` triangulation. The Ic value at any
+   composition is the linear (barycentric) interpolation of the surrounding
+   simplex's three control values - see `IcSurface.value_at_cartesian`.
 
-Neither model is a calibrated correlation; both are experimental
-visualization aids and must not be used for engineering interpretation.
-`calculate_ic_rw` (Robertson-Wride) is kept purely as a separate reference
-calculation - it is not used to build either Ic surface above, and it is
-not a fitting target for `IC_CLASS_MAPPING` or `IC_VERTEX_VALUES`.
+This construction is C0-continuous everywhere (adjacent simplices always
+share the same two control values along their common edge), exactly
+reproduces every control value, and never extrapolates: compositions
+outside the triangle return `None` instead of a numerically extrapolated
+value. It is NOT guaranteed to be monotonic in any particular composition
+direction; check that separately (see `ic_diagnostic.py`) rather than
+assuming it.
+
+`IC_CLASS_ENVELOPES` (renamed from the old `IC_CLASS_MAPPING`) is kept as
+diagnostic-only reference data (each class's plausible `[ic_min, ic_max]`
+range and intended Robertson zone(s)); it is NOT used to constrain the
+surface in any way.
+
+None of this is a calibrated correlation; it is an experimental
+visualization aid and must not be used for engineering interpretation.
+
+Reuse for other triangles
+--------------------------
+`IcSurface` itself has no NEN-specific knowledge beyond the constants it is
+given - to build an analogous surface for a different `TriangleDefinition`,
+supply `class_targets` (class code -> representative Ic) and
+`corner_targets` (a 3-entry dict keyed by tuples in the same order as
+`triangle.component_keys`) for that triangle.
 """
 
+import logging
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # add src/ to sys.path
 
-from shapely.geometry import Point  # noqa: E402
+import numpy as np  # noqa: E402
+from scipy.spatial import Delaunay  # noqa: E402
 
-from modules.NEN_graph.classification import get_nen_triangle, get_triangle_polygons  # noqa: E402
+from modules.NEN_graph.classification import (  # noqa: E402
+    classify_composition_generic,
+    get_nen_triangle,
+    get_triangle_polygons,
+)
 from modules.NEN_graph.coordinates import composition_to_cartesian  # noqa: E402
 from modules.NEN_graph.triangle_definition import TriangleDefinition  # noqa: E402
 
-IC_ANCHORS = {
-    "sand": 1.68,
-    "silt": 2.78,
-    "lutum": 3.28,
+logger = logging.getLogger(__name__)
+
+# Per-class representative ("target") Ic value - the editable source of
+# truth for where the surface is anchored near the middle of each polygon.
+IC_CLASS_TARGETS: Dict[str, float] = {
+    "Ks1": 3.30,
+    "Ks2": 3.10,
+    "Ks3": 2.90,
+    "Ks4": 2.75,
+
+    "Kz1": 2.85,
+    "Kz2": 2.70,
+    "Kz3": 2.65,
+
+    "Lz1": 2.80,
+    "Lz3": 2.55,
+
+    "Zk": 1.85,
+    "Zs1": 1.65,
+    "Zs2": 1.80,
+    "Zs3": 2.00,
+    "Zs4": 2.30,
 }
 
-
-def calculate_mean_ic_legacy_three_anchor(
-    composition: Dict[str, float],
-    anchors: Dict[str, float] = IC_ANCHORS,
-    total: float = 100.0,
-    tolerance: float = 1e-6,
-) -> float:
-    """Legacy: linearly interpolate a mean Ic value from just the 3 triangle corners.
-
-    mean_ic = sum(fraction[key] * anchors[key] for key in anchors), where
-    fraction[key] = composition[key] / total.
-
-    Args:
-        composition (dict): component key -> percentage, summing to `total`.
-            Must provide a value for every key in `anchors`.
-        anchors (dict): component key -> experimental Ic anchor value.
-        total (float): the expected sum of `composition`'s values (100 for NEN).
-        tolerance (float): allowed deviation from `total` for the sum check.
-
-    Returns:
-        float: the linearly interpolated mean Ic.
-
-    Raises:
-        ValueError: if composition is missing an anchor key, or its values
-            (restricted to the anchor keys) don't sum to `total`.
-    """
-    missing = [k for k in anchors if k not in composition]
-    if missing:
-        raise ValueError(f"composition is missing component(s) {missing} required by anchors")
-
-    composition_sum = sum(composition[k] for k in anchors)
-    if abs(composition_sum - total) > tolerance:
-        raise ValueError(f"composition must sum to {total} (got {composition_sum})")
-
-    return sum((composition[k] / total) * anchors[k] for k in anchors)
-
-
-def calculate_ic_rw(fines: float) -> float:
-    """Robertson-Wride Ic benchmark from a fines percentage (silt + lutum).
-
-    Reference calculation only - NEN 5104 uses a 63 micron lutum/silt
-    boundary while the published Robertson-Wride fines relationship uses
-    75 micron, so this is an approximate benchmark, not a like-for-like
-    value. It does not influence `IC_CLASS_MAPPING`, `IC_VERTEX_VALUES`, or
-    the class-constrained surface below.
-    """
-    return ((fines + 3.7) / 1.75) ** (1 / 3.25)
-
-
-# Per-class target Ic range/centre. This is the editable "source of truth"
-# for the class-constrained model's representative-point values - edit
-# these to retune each polygon's centre. `zones` records the intended
-# Robertson soil-behaviour-type zone(s) for documentation purposes only; it
-# is not used in any calculation.
-IC_CLASS_MAPPING = {
-    "Ks1": {"ic_min": 2.95, "ic_center": 3.30, "ic_max": 3.55, "zones": [3]},
-    "Ks2": {"ic_min": 2.80, "ic_center": 3.10, "ic_max": 3.30, "zones": [3, 4]},
-    "Ks3": {"ic_min": 2.65, "ic_center": 2.90, "ic_max": 3.10, "zones": [4, 3]},
-    "Ks4": {"ic_min": 2.45, "ic_center": 2.75, "ic_max": 2.95, "zones": [4, 5]},
-
-    "Kz1": {"ic_min": 2.55, "ic_center": 2.85, "ic_max": 3.00, "zones": [4, 3]},
-    "Kz2": {"ic_min": 2.50, "ic_center": 2.70, "ic_max": 2.85, "zones": [4, 5]},
-    "Kz3": {"ic_min": 1.95, "ic_center": 2.65, "ic_max": 2.75, "zones": [4, 5]},
-
-    "Lz1": {"ic_min": 2.55, "ic_center": 2.80, "ic_max": 2.95, "zones": [4]},
-    "Lz3": {"ic_min": 2.30, "ic_center": 2.55, "ic_max": 2.75, "zones": [5, 4]},
-
-    "Zk": {"ic_min": 1.60, "ic_center": 1.85, "ic_max": 2.10, "zones": [6, 5]},
-    "Zs1": {"ic_min": 1.50, "ic_center": 1.65, "ic_max": 1.80, "zones": [6]},
-    "Zs2": {"ic_min": 1.60, "ic_center": 1.80, "ic_max": 1.95, "zones": [6]},
-    "Zs3": {"ic_min": 1.80, "ic_center": 2.00, "ic_max": 2.30, "zones": [6, 5]},
-    "Zs4": {"ic_min": 2.05, "ic_center": 2.30, "ic_max": 2.65, "zones": [5, 4]},
-}
-
-# Explicit Ic value for every NEN polygon vertex, keyed by its exact
-# (sand, silt, lutum) percentages. This is the editable "source of truth"
-# for the class-constrained model's boundary values: every vertex that
-# appears in the NEN JSON must have exactly one entry here (checked at
-# `ClassConstrainedIcSurface` construction time). Because neighbouring
-# polygons share the same vertex key, they automatically get the same
-# boundary Ic value, which is what makes the surface continuous.
-IC_VERTEX_VALUES = {
-    # Outer corners
+# Explicit Ic value for the 3 pure-component corners, keyed by
+# (sand, silt, lutum) tuples (i.e. in `triangle.component_keys` order for
+# the NEN triangle). These take precedence over the perimeter-anchor
+# averaging rule for any other outer-edge vertex.
+IC_CORNER_TARGETS: Dict[Tuple[float, float, float], float] = {
     (100.0, 0.0, 0.0): 1.60,   # pure sand
     (0.0, 100.0, 0.0): 2.80,   # pure silt
     (0.0, 0.0, 100.0): 3.45,   # pure lutum
+}
 
-    # Clay-rich boundaries
-    (50.0, 0.0, 50.0): 3.15,
-    (0.0, 50.0, 50.0): 3.25,
-    (65.0, 0.0, 35.0): 3.00,
-    (0.0, 65.0, 35.0): 3.05,
-    (75.0, 0.0, 25.0): 2.85,
-    (50.0, 25.0, 25.0): 2.75,
-    (0.0, 75.0, 25.0): 2.85,
+# Diagnostic-only reference envelope per class (NOT used to constrain the
+# surface): a plausible [ic_min, ic_max] range and the intended Robertson
+# soil-behaviour-type zone(s), for documentation/QA purposes only.
+IC_CLASS_ENVELOPES: Dict[str, dict] = {
+    "Ks1": {"ic_min": 2.95, "ic_max": 3.55, "zones": [3]},
+    "Ks2": {"ic_min": 2.80, "ic_max": 3.30, "zones": [3, 4]},
+    "Ks3": {"ic_min": 2.65, "ic_max": 3.10, "zones": [4, 3]},
+    "Ks4": {"ic_min": 2.45, "ic_max": 2.95, "zones": [4, 5]},
 
-    # Loam boundaries
-    (15.0, 65.1, 19.9): 2.70,
-    (15.0, 85.0, 0.0): 2.70,
+    "Kz1": {"ic_min": 2.55, "ic_max": 3.00, "zones": [4, 3]},
+    "Kz2": {"ic_min": 2.50, "ic_max": 2.85, "zones": [4, 5]},
+    "Kz3": {"ic_min": 1.95, "ic_max": 2.75, "zones": [4, 5]},
 
-    # Sandy-clay boundaries
-    (82.5, 0.0, 17.5): 2.65,
-    (50.0, 32.5, 17.5): 2.75,
-    (88.0, 0.0, 12.0): 2.50,
-    (50.0, 38.0, 12.0): 2.65,
+    "Lz1": {"ic_min": 2.55, "ic_max": 2.95, "zones": [4]},
+    "Lz3": {"ic_min": 2.30, "ic_max": 2.75, "zones": [5, 4]},
 
-    # Lutum = 8% transition
-    (92.0, 0.0, 8.0): 2.00,
-    (82.5, 9.5, 8.0): 2.05,
-    (67.5, 24.5, 8.0): 2.25,
-    (50.0, 42.0, 8.0): 2.55,
-
-    # Nearly pure sand
-    (95.0, 0.0, 5.0): 1.70,
-    (90.0, 5.0, 5.0): 1.75,
-    (82.5, 12.5, 5.0): 1.90,
-
-    # Lutum = 0% sand-silt edge
-    (90.0, 10.0, 0.0): 1.70,
-    (82.5, 17.5, 0.0): 1.85,
-    (67.5, 32.5, 0.0): 2.15,
-    (50.0, 50.0, 0.0): 2.45,
+    "Zk": {"ic_min": 1.60, "ic_max": 2.10, "zones": [6, 5]},
+    "Zs1": {"ic_min": 1.50, "ic_max": 1.80, "zones": [6]},
+    "Zs2": {"ic_min": 1.60, "ic_max": 1.95, "zones": [6]},
+    "Zs3": {"ic_min": 1.80, "ic_max": 2.30, "zones": [6, 5]},
+    "Zs4": {"ic_min": 2.05, "ic_max": 2.65, "zones": [5, 4]},
 }
 
 
 class IcClassMappingError(ValueError):
-    """Raised for `IC_VERTEX_VALUES`/`IC_CLASS_MAPPING` configuration problems.
+    """Raised for `IC_CLASS_TARGETS`/`IC_CORNER_TARGETS` configuration problems.
 
-    Either a NEN polygon vertex has no corresponding `IC_VERTEX_VALUES`
-    entry, or classes sharing a vertex have non-overlapping Ic ranges.
+    Raised when a class is missing (or has an unexpected extra) target, or
+    when two control points would land at the same location with
+    conflicting Ic values.
     """
 
 
-def _vertex_lookup_key(vertex: Dict[str, float]) -> Tuple[float, float, float]:
-    """(sand, silt, lutum) lookup key for `IC_VERTEX_VALUES`, rounded for float-safety."""
-    return (round(vertex["sand"], 6), round(vertex["silt"], 6), round(vertex["lutum"], 6))
+class IcSurface:
+    """Global, class-anchored, piecewise-linear representative-Ic surface.
 
-
-def _normalize_vertex_values_table(
-    vertex_values: Dict[Tuple[float, float, float], float],
-) -> Dict[Tuple[float, float, float], float]:
-    return {tuple(round(v, 6) for v in key): value for key, value in vertex_values.items()}
-
-
-def _barycentric(
-    p: Tuple[float, float], a: Tuple[float, float], b: Tuple[float, float], c: Tuple[float, float]
-) -> Optional[Tuple[float, float, float]]:
-    """Barycentric coordinates of `p` with respect to triangle (a, b, c), or None if degenerate."""
-    x, y = p
-    (ax, ay), (bx, by), (cx, cy) = a, b, c
-    denom = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy)
-    if abs(denom) < 1e-15:
-        return None
-    wa = ((by - cy) * (x - cx) + (cx - bx) * (y - cy)) / denom
-    wb = ((cy - ay) * (x - cx) + (ax - cx) * (y - cy)) / denom
-    return wa, wb, 1.0 - wa - wb
-
-
-class ClassConstrainedIcSurface:
-    """Continuous, piecewise-linear Ic surface built from explicit values.
-
-    Construction:
-        1. Each polygon's representative point is assigned its
-           `IC_CLASS_MAPPING[code]["ic_center"]`.
-        2. Every NEN polygon vertex is assigned its explicit
-           `IC_VERTEX_VALUES` entry (looked up by exact (sand, silt, lutum)
-           percentages) - no averaging is performed.
-        3. Each polygon is fan-triangulated from its representative point to
-           every edge; Ic is interpolated linearly (barycentric) within each
-           fan triangle. Because adjacent polygons share identical vertex
-           values along their common edge (the same `IC_VERTEX_VALUES`
-           entry), the field is continuous across NEN polygon boundaries.
-
-    Raises:
-        IcClassMappingError: at construction time, if any NEN polygon
-            vertex has no corresponding `IC_VERTEX_VALUES` entry.
+    See the module docstring for the full construction methodology.
 
     Attributes:
-        validation_warnings (List[str]): non-fatal warnings noting any
-            vertex whose explicit value falls outside a touching class's
-            configured `[ic_min, ic_max]` range. Construction does not fail
-            on these; inspect/report them explicitly (see `ic_diagnostic.py`).
+        controls (List[dict]): one entry per control point, each with keys
+            `xy` (Cartesian tuple), `ic` (assigned value), `control_type`
+            (`"class_representative"`, `"perimeter_anchor"`, or `"corner"`),
+            `classes` (contributing class code(s), or `None` for corners),
+            `composition` (the NEN composition tuple/key that produced this
+            control, where applicable), and `is_fallback` (bool, only
+            meaningful for `"class_representative"` controls).
+        triangulation (scipy.spatial.Delaunay): the single global
+            triangulation over every control point's Cartesian coordinates.
+        values (np.ndarray): control Ic values, in the same order as
+            `triangulation.points`.
+        representative_point_fallbacks (List[str]): class codes whose
+            centroid fell outside their own polygon, so a
+            `representative_point()` fallback was used instead.
     """
 
     def __init__(
         self,
         triangle: Optional[TriangleDefinition] = None,
-        class_mapping: Dict[str, dict] = IC_CLASS_MAPPING,
-        vertex_values: Dict[Tuple[float, float, float], float] = IC_VERTEX_VALUES,
+        class_targets: Dict[str, float] = IC_CLASS_TARGETS,
+        corner_targets: Dict[Tuple[float, float, float], float] = IC_CORNER_TARGETS,
+        class_envelopes: Dict[str, dict] = IC_CLASS_ENVELOPES,
+        coordinate_tolerance: float = 1e-6,
     ):
         self.triangle = triangle or get_nen_triangle()
-        self.class_mapping = class_mapping
+        self.class_targets = class_targets
+        self.class_envelopes = class_envelopes
+        self.coordinate_tolerance = coordinate_tolerance
         self.polygons = get_triangle_polygons(self.triangle)
-        self._vertex_values, vertex_codes = self._resolve_vertex_values(vertex_values)
-        self.validation_warnings = self._validate_vertex_ranges(vertex_codes)
-        self._fans = self._build_fans()
+        self.representative_point_fallbacks: List[str] = []
 
-    def _resolve_vertex_values(
-        self, vertex_values: Dict[Tuple[float, float, float], float]
-    ) -> Tuple[Dict[tuple, float], Dict[tuple, dict]]:
-        normalized = _normalize_vertex_values_table(vertex_values)
+        self.controls = self._build_controls(corner_targets)
 
-        owners: Dict[tuple, dict] = {}
+        points = np.array([c["xy"] for c in self.controls], dtype=float)
+        self.values = np.array([c["ic"] for c in self.controls], dtype=float)
+        self.triangulation = Delaunay(points)
+
+    # -- construction ---------------------------------------------------
+
+    def _build_controls(self, corner_targets: Dict[Tuple[float, float, float], float]) -> List[dict]:
+        class_codes = set(self.polygons)
+        missing_targets = class_codes - set(self.class_targets)
+        extra_targets = set(self.class_targets) - class_codes
+        if missing_targets or extra_targets:
+            raise IcClassMappingError(
+                f"IC_CLASS_TARGETS does not match the triangle's polygons: "
+                f"missing={sorted(missing_targets)}, unexpected={sorted(extra_targets)}"
+            )
+
+        controls: List[dict] = []
+        seen_xy: Dict[Tuple[float, float], dict] = {}
+
+        def _add(xy, ic, control_type, classes, composition, is_fallback=False):
+            key = (round(xy[0], 9), round(xy[1], 9))
+            existing = seen_xy.get(key)
+            if existing is not None:
+                if existing["control_type"] != control_type or abs(existing["ic"] - ic) > 1e-9:
+                    raise IcClassMappingError(
+                        f"conflicting control points at {xy}: "
+                        f"{existing['control_type']}={existing['ic']} vs {control_type}={ic}"
+                    )
+                return
+            entry = {
+                "xy": (float(xy[0]), float(xy[1])),
+                "ic": float(ic),
+                "control_type": control_type,
+                "classes": classes,
+                "composition": composition,
+                "is_fallback": is_fallback,
+            }
+            seen_xy[key] = entry
+            controls.append(entry)
+
+        # 1. one representative control point per class.
+        for code, poly in self.polygons.items():
+            shapely_poly = poly.shapely_polygon
+            centroid = shapely_poly.centroid
+            if shapely_poly.contains(centroid):
+                point = (centroid.x, centroid.y)
+                is_fallback = False
+            else:
+                rep = shapely_poly.representative_point()
+                point = (rep.x, rep.y)
+                is_fallback = True
+                self.representative_point_fallbacks.append(code)
+            _add(point, self.class_targets[code], "class_representative", [code], None, is_fallback)
+
+        # 2. perimeter anchors: distinct outer-edge NEN vertices, excluding corners.
+        corner_keys = {tuple(round(v, 6) for v in key) for key in corner_targets}
+        perimeter_vertices: Dict[Tuple[float, float, float], Dict[str, float]] = {}
         for poly_def in self.triangle.polygons:
             for vertex in poly_def.vertices:
-                key = _vertex_lookup_key(vertex)
-                entry = owners.setdefault(key, {"vertex": vertex, "codes": set()})
-                entry["codes"].add(poly_def.code)
+                values = tuple(vertex[k] for k in self.triangle.component_keys)
+                if min(values) > self.coordinate_tolerance:
+                    continue  # strictly internal vertex - not an interpolation control
+                key = tuple(round(v, 6) for v in values)
+                if key in corner_keys:
+                    continue  # corners are handled explicitly below
+                perimeter_vertices.setdefault(key, vertex)
 
-        missing = [entry for key, entry in owners.items() if key not in normalized]
-        if missing:
-            details = "; ".join(
-                f"{entry['vertex']} (used by {', '.join(sorted(entry['codes']))})" for entry in missing
-            )
-            raise IcClassMappingError(f"IC_VERTEX_VALUES is missing an entry for vertex/vertices: {details}")
+        for key, vertex in perimeter_vertices.items():
+            classes = sorted(set(self._incident_classes(vertex)))
+            ic = sum(self.class_targets[c] for c in classes) / len(classes)
+            xy = composition_to_cartesian(vertex, self.triangle)
+            _add(xy, ic, "perimeter_anchor", classes, key)
 
-        values = {key: normalized[key] for key in owners}
-        return values, owners
+        # 3. explicit corner values (precedence over perimeter averaging).
+        for corner_tuple, ic in corner_targets.items():
+            composition = dict(zip(self.triangle.component_keys, corner_tuple))
+            xy = composition_to_cartesian(composition, self.triangle)
+            _add(xy, ic, "corner", None, corner_tuple)
 
-    def _validate_vertex_ranges(self, owners: Dict[tuple, dict]) -> List[str]:
-        warnings = []
-        for key, entry in owners.items():
-            value = self._vertex_values[key]
-            for code in sorted(entry["codes"]):
-                lo, hi = self.class_mapping[code]["ic_min"], self.class_mapping[code]["ic_max"]
-                if not (lo - 1e-9 <= value <= hi + 1e-9):
-                    warnings.append(
-                        f"vertex {entry['vertex']} = {value:.3f} is outside {code}'s configured range [{lo}, {hi}]"
-                    )
-        return warnings
+        return controls
 
-    def _build_fans(self) -> Dict[str, List[Tuple]]:
-        fans = {}
-        for poly_def in self.triangle.polygons:
-            code = poly_def.code
-            class_polygon = self.polygons[code]
-            cartesian_vertices = class_polygon.cartesian_vertices
-            vertex_ic = [self._vertex_values[_vertex_lookup_key(v)] for v in poly_def.vertices]
-            rep_point = class_polygon.shapely_polygon.representative_point().coords[0]
-            rep_ic = self.class_mapping[code]["ic_center"]
+    def _incident_classes(self, composition: Dict[str, float]) -> List[str]:
+        """Every class whose polygon closure contains `composition` (by distance, not JSON membership)."""
+        result = classify_composition_generic(composition, self.triangle, tolerance=self.coordinate_tolerance)
+        if result["status"] == "inside":
+            return [result["class_code"]]
+        if result["status"] == "on_boundary":
+            return result["candidate_classes"]
+        raise IcClassMappingError(
+            f"perimeter anchor at {composition} does not classify against any polygon (status={result['status']!r})"
+        )
 
-            n = len(cartesian_vertices)
-            triangles = []
-            for i in range(n):
-                j = (i + 1) % n
-                triangles.append(
-                    (rep_point, cartesian_vertices[i], cartesian_vertices[j], rep_ic, vertex_ic[i], vertex_ic[j])
-                )
-            fans[code] = triangles
-        return fans
-
-    def locate_polygon(self, x: float, y: float) -> Optional[str]:
-        """Nearest (or containing) NEN polygon code for an (x, y) point."""
-        point = Point(x, y)
-        best_code = None
-        best_dist = float("inf")
-        for code, poly in self.polygons.items():
-            dist = poly.shapely_polygon.distance(point)
-            if dist < best_dist:
-                best_dist = dist
-                best_code = code
-            if dist == 0.0:
-                break
-        return best_code
+    # -- evaluation -------------------------------------------------------
 
     def value_at_cartesian(self, x: float, y: float) -> Optional[float]:
-        """Interpolated Ic value at an (x, y) point, or None if outside the triangle."""
-        code = self.locate_polygon(x, y)
-        if code is None:
-            return None
-        best_value = None
-        best_score = float("-inf")
-        for rep_point, v_i, v_j, rep_ic, ic_i, ic_j in self._fans[code]:
-            bary = _barycentric((x, y), rep_point, v_i, v_j)
-            if bary is None:
-                continue
-            wa, wb, wc = bary
-            score = min(wa, wb, wc)
-            if score > best_score:
-                best_score = score
-                best_value = wa * rep_ic + wb * ic_i + wc * ic_j
-        return best_value
+        """Linear barycentric interpolation at (x, y), or `None` if outside the triangle.
 
-    def to_js_fans(self) -> Dict[str, list]:
-        """Serializable fan-triangle data for the client-side hover script."""
+        Never extrapolates: a composition strictly outside the outer
+        triangle (i.e. outside the convex hull of the control points, which
+        coincides with the outer triangle since the 3 corners are always
+        control points) returns `None`.
+        """
+        simplex = self.triangulation.find_simplex((x, y))
+        if simplex == -1:
+            return None
+        transform = self.triangulation.transform[simplex]
+        delta = np.array([x, y]) - transform[2]
+        bary_ab = transform[:2].dot(delta)
+        bary = np.array([bary_ab[0], bary_ab[1], 1.0 - bary_ab.sum()])
+        vertex_ids = self.triangulation.simplices[simplex]
+        return float(bary.dot(self.values[vertex_ids]))
+
+    def to_js_field(self) -> dict:
+        """Serializable `{"points", "simplices", "values"}` for the hover script.
+
+        `visualization.py`'s client-side hover evaluates the EXACT SAME
+        Delaunay triangulation + linear barycentric interpolation as
+        `value_at_cartesian` from this - there is no separate/approximate
+        JS scheme.
+        """
         return {
-            code: [
-                [[rp[0], rp[1], rep_ic], [vi[0], vi[1], ic_i], [vj[0], vj[1], ic_j]]
-                for rp, vi, vj, rep_ic, ic_i, ic_j in triangles
-            ]
-            for code, triangles in self._fans.items()
+            "points": self.triangulation.points.tolist(),
+            "simplices": self.triangulation.simplices.tolist(),
+            "values": self.values.tolist(),
         }
 
 
-_DEFAULT_SURFACE: Optional[ClassConstrainedIcSurface] = None
+_DEFAULT_SURFACE: Optional[IcSurface] = None
 
 
-def get_class_constrained_ic_surface() -> ClassConstrainedIcSurface:
-    """Return the cached default `ClassConstrainedIcSurface` for the NEN triangle."""
+def get_ic_surface() -> IcSurface:
+    """Return the cached default `IcSurface` for the NEN triangle."""
     global _DEFAULT_SURFACE
     if _DEFAULT_SURFACE is None:
-        _DEFAULT_SURFACE = ClassConstrainedIcSurface()
+        _DEFAULT_SURFACE = IcSurface()
     return _DEFAULT_SURFACE
 
 
-def calculate_mean_ic_class_constrained(
+def calculate_mean_ic(
     composition: Dict[str, float],
     triangle: Optional[TriangleDefinition] = None,
-    surface: Optional[ClassConstrainedIcSurface] = None,
+    surface: Optional[IcSurface] = None,
 ) -> Optional[float]:
-    """Default: continuous, class-constrained Ic via `ClassConstrainedIcSurface`.
+    """Representative Ic at a composition, via the canonical `IcSurface`.
 
     Args:
         composition (dict): component key -> percentage, summing to `triangle.total`.
         triangle (TriangleDefinition, optional): defaults to the NEN triangle.
-        surface (ClassConstrainedIcSurface, optional): defaults to the cached
-            default surface for `triangle`.
+        surface (IcSurface, optional): defaults to the cached default surface for `triangle`.
 
     Returns:
-        float: the interpolated Ic value, or None if the composition falls
-            outside the triangle.
+        float: the interpolated representative Ic value, or `None` if the
+            composition falls outside the triangle (no extrapolation).
     """
     triangle = triangle or get_nen_triangle()
-    surface = surface or get_class_constrained_ic_surface()
+    surface = surface or get_ic_surface()
     x, y = composition_to_cartesian(composition, triangle)
     return surface.value_at_cartesian(x, y)
-
-
-def summarize_vertex_trend(
-    vertex_values: Dict[Tuple[float, float, float], float] = IC_VERTEX_VALUES,
-) -> float:
-    """Pearson correlation between fines fraction (silt + lutum) and Ic across `IC_VERTEX_VALUES`.
-
-    Informational only ("values generally increase when sand is replaced by
-    silt or lutum"): this is not enforced anywhere in the surface
-    construction, just reported by `ic_diagnostic.py` as a sanity check.
-    """
-    fines = [silt + lutum for (_sand, silt, lutum) in vertex_values]
-    ic = list(vertex_values.values())
-    n = len(fines)
-    mean_f = sum(fines) / n
-    mean_i = sum(ic) / n
-    cov = sum((f - mean_f) * (i - mean_i) for f, i in zip(fines, ic))
-    var_f = sum((f - mean_f) ** 2 for f in fines)
-    var_i = sum((i - mean_i) ** 2 for i in ic)
-    if var_f == 0 or var_i == 0:
-        return 0.0
-    return cov / (var_f * var_i) ** 0.5
-
-
