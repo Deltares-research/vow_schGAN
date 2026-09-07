@@ -23,7 +23,8 @@ from modules.NEN_graph.classification import (  # noqa: E402
     get_nen_triangle,
     get_triangle_polygons,
 )
-from modules.NEN_graph.coordinates import cartesian_to_composition, composition_to_cartesian  # noqa: E402
+from modules.NEN_graph.coordinates import SQRT3_OVER_2, cartesian_to_composition, composition_to_cartesian  # noqa: E402
+from modules.NEN_graph.ic_mapping import get_class_constrained_ic_surface  # noqa: E402
 from modules.NEN_graph.triangle_definition import TriangleDefinition  # noqa: E402
 
 logger = logging.getLogger(__name__)
@@ -257,7 +258,14 @@ def _hex_to_rgba(hex_color: str, alpha: float) -> str:
     return f"rgba({r},{g},{b},{alpha})"
 
 
-def _build_hover_script(div_id: str, polygons, name_field: str, triangle: TriangleDefinition) -> str:
+def _build_hover_script(
+    div_id: str,
+    polygons,
+    name_field: str,
+    triangle: TriangleDefinition,
+    ic_surface_js: Optional[dict] = None,
+    classification_label_override: Optional[str] = None,
+) -> str:
     """JS snippet giving a pixel-accurate (non-snapping) coordinate/class readout.
 
     Rather than relying on Plotly's hover system (which always snaps to the
@@ -270,6 +278,12 @@ def _build_hover_script(div_id: str, polygons, name_field: str, triangle: Triang
     The embedded JS contains no assumptions about specific component names:
     component keys/labels, the corner assignment, the total, and the
     classification label are all embedded as data read from `triangle`.
+
+    `ic_surface_js` and `classification_label_override` are optional and
+    only used by the Ic visualization; when omitted (the default), the
+    generated script is unchanged from the plain triangle behavior.
+    `ic_surface_js` must be `ClassConstrainedIcSurface.to_js_fans()` output:
+    code -> list of [[x, y, ic], [x, y, ic], [x, y, ic]] fan triangles.
     """
     import json
 
@@ -287,8 +301,9 @@ def _build_hover_script(div_id: str, polygons, name_field: str, triangle: Triang
     polys_json = json.dumps(polys_js)
     components_json = json.dumps(components_js)
     corner_keys_json = json.dumps(corner_keys_js)
-    classification_label_json = json.dumps(_classification_label(triangle))
+    classification_label_json = json.dumps(classification_label_override or _classification_label(triangle))
     total_json = json.dumps(triangle.total)
+    ic_surface_json = json.dumps(ic_surface_js) if ic_surface_js is not None else "null"
 
     return f"""
     (function() {{
@@ -298,6 +313,7 @@ def _build_hover_script(div_id: str, polygons, name_field: str, triangle: Triang
         var cornerKeys = {corner_keys_json};
         var classificationLabel = {classification_label_json};
         var TOTAL = {total_json};
+        var icSurface = {ic_surface_json};
         var TOL = 0.003;
 
         var overlay = document.createElement('div');
@@ -356,6 +372,43 @@ def _build_hover_script(div_id: str, polygons, name_field: str, triangle: Triang
             return 'boundary: ' + candidates.map(function(p) {{ return p.code; }}).join(', ');
         }}
 
+        function locateCode(x, y) {{
+            var bestCode = null, bestDist = Infinity;
+            for (var i = 0; i < polys.length; i++) {{
+                var p = polys[i];
+                var d = pointInPolygon(x, y, p.verts) ? 0 : distToPolygon(x, y, p.verts);
+                if (d < bestDist) {{ bestDist = d; bestCode = p.code; }}
+                if (d === 0) break;
+            }}
+            return bestCode;
+        }}
+
+        function barycentric(x, y, a, b, c) {{
+            var ax = a[0], ay = a[1], bx = b[0], by = b[1], cx = c[0], cy = c[1];
+            var denom = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy);
+            if (Math.abs(denom) < 1e-15) return null;
+            var wa = ((by - cy) * (x - cx) + (cx - bx) * (y - cy)) / denom;
+            var wb = ((cy - ay) * (x - cx) + (ax - cx) * (y - cy)) / denom;
+            return [wa, wb, 1 - wa - wb];
+        }}
+
+        function meanIcAt(code, x, y) {{
+            var fans = icSurface[code];
+            if (!fans) return null;
+            var bestVal = null, bestScore = -Infinity;
+            for (var i = 0; i < fans.length; i++) {{
+                var tri = fans[i];
+                var bary = barycentric(x, y, tri[0], tri[1], tri[2]);
+                if (!bary) continue;
+                var score = Math.min(bary[0], bary[1], bary[2]);
+                if (score > bestScore) {{
+                    bestScore = score;
+                    bestVal = bary[0] * tri[0][2] + bary[1] * tri[1][2] + bary[2] * tri[2][2];
+                }}
+            }}
+            return bestVal;
+        }}
+
         function cartesianToComposition(x, y) {{
             var wTop = y / (Math.sqrt(3) / 2);
             var wRight = x - 0.5 * wTop;
@@ -390,6 +443,13 @@ def _build_hover_script(div_id: str, polygons, name_field: str, triangle: Triang
                 lines.push(c.label + ': ' + comp[c.key].toFixed(1) + '%');
             }}
             lines.push(classificationLabel + ': ' + classify(x, y));
+            if (icSurface) {{
+                var code = locateCode(x, y);
+                var meanIc = code ? meanIcAt(code, x, y) : null;
+                if (meanIc !== null && meanIc !== undefined) {{
+                    lines.push('Mean Ic: ' + meanIc.toFixed(3));
+                }}
+            }}
             overlay.innerHTML = lines.join('<br>');
             overlay.style.left = (evt.clientX - rect.left + 14) + 'px';
             overlay.style.top = (evt.clientY - rect.top + 14) + 'px';
@@ -569,6 +629,121 @@ def plot_nen_triangle_plotly(
         get_nen_triangle(), output_path=output_path, colors=_COLORS,
         grid_step=grid_step, name_field=name_field,
     )
+
+
+# --- Experimental Ic (soil behaviour type index) visualization --------------
+
+
+def plot_nen_triangle_with_ic(
+    output_path: Optional[Path] = None,
+    grid_resolution: int = 150,
+    colorscale: str = "Turbo",
+    show_robertson_contours: bool = True,
+    label_lang: str = "english",
+):
+    """NEN 5104 triangle with a continuous, class-constrained Mean Ic colour gradient.
+
+    Mean Ic comes from `ic_mapping.ClassConstrainedIcSurface`: a piecewise-linear
+    surface built from `ic_mapping.IC_CLASS_MAPPING` per-class target ranges,
+    continuous across NEN polygon boundaries (not a per-polygon constant).
+    See `ic_mapping.py` for the model's construction and its disclaimers.
+
+    Args:
+        output_path (Path, optional): where to write the HTML file. Defaults
+            to `nen5104_triangle_ic_interactive.html` next to this module.
+        grid_resolution (int): number of samples per axis for the gradient mesh.
+        colorscale (str): Plotly colorscale name for the Mean Ic gradient.
+        show_robertson_contours (bool): overlay contour lines at Ic = 2.05, 2.60, 2.95.
+        label_lang (str): "english" or "dutch", which name to use for hover labels.
+
+    Returns:
+        plotly.graph_objects.Figure: the interactive figure.
+    """
+    import numpy as np
+    import plotly.graph_objects as go
+
+    triangle = get_nen_triangle()
+    polygons = get_triangle_polygons(triangle)
+    name_field = "english_name" if label_lang == "english" else "dutch_name"
+    surface = get_class_constrained_ic_surface()
+
+    xs = np.linspace(0.0, 1.0, grid_resolution)
+    ys = np.linspace(0.0, SQRT3_OVER_2, grid_resolution)
+    z = np.full((grid_resolution, grid_resolution), np.nan)
+    for j, y in enumerate(ys):
+        for i, x in enumerate(xs):
+            w_top = y / SQRT3_OVER_2
+            w_right = x - 0.5 * w_top
+            w_left = 1.0 - w_right - w_top
+            if w_left >= -1e-9 and w_right >= -1e-9 and w_top >= -1e-9:
+                value = surface.value_at_cartesian(x, y)
+                if value is not None:
+                    z[j, i] = value
+
+    fig = go.Figure()
+
+    fig.add_trace(go.Contour(
+        x=xs, y=ys, z=z,
+        colorscale=colorscale,
+        contours=dict(coloring="heatmap"),  # continuous shading, no banding
+        colorbar=dict(title="Mean Ic"),
+        connectgaps=False,
+        hoverinfo="skip",
+        showlegend=False,
+    ))
+
+    if show_robertson_contours:
+        for level in (2.05, 2.60, 2.95):
+            fig.add_trace(go.Contour(
+                x=xs, y=ys, z=z,
+                showscale=False,
+                connectgaps=False,
+                contours=dict(coloring="lines", start=level, end=level, size=1, showlabels=True),
+                line=dict(color="black", width=1.2),
+                hoverinfo="skip",
+                showlegend=False,
+            ))
+
+    outer = [(0.0, 0.0), (1.0, 0.0), (0.5, SQRT3_OVER_2), (0.0, 0.0)]
+    fig.add_trace(go.Scatter(
+        x=[p[0] for p in outer], y=[p[1] for p in outer], mode="lines",
+        line=dict(color="black", width=2), hoverinfo="skip", showlegend=False,
+    ))
+
+    for code, poly in polygons.items():
+        verts = poly.cartesian_vertices + [poly.cartesian_vertices[0]]
+        fig.add_trace(go.Scatter(
+            x=[v[0] for v in verts], y=[v[1] for v in verts],
+            mode="lines", line=dict(color="black", width=1),
+            hoverinfo="skip", showlegend=False,
+        ))
+        cx, cy = poly.shapely_polygon.representative_point().coords[0]
+        fig.add_annotation(x=cx, y=cy, text=f"<b>{code}</b>", showarrow=False, font=dict(size=11, color="black"))
+
+    _add_plotly_axis_ticks(fig, triangle)
+
+    fig.update_layout(
+        title="NEN 5104 - class-constrained Mean Ic gradient (piecewise-linear)",
+        xaxis=dict(visible=False, range=[-0.30, 1.35]),
+        yaxis=dict(visible=False, range=[-0.20, 1.0], scaleanchor="x", scaleratio=1),
+        plot_bgcolor="white",
+        width=1000,
+        height=850,
+        hovermode="closest",
+    )
+
+    div_id = triangle.triangle_id.replace("_", "-") + "-ic-plot"
+    if output_path is None:
+        output_path = Path(__file__).parent / "nen5104_triangle_ic_interactive.html"
+    fig.write_html(
+        str(output_path),
+        div_id=div_id,
+        post_script=_build_hover_script(
+            div_id, polygons, name_field, triangle,
+            ic_surface_js=surface.to_js_fans(), classification_label_override="NEN class",
+        ),
+    )
+    return fig
 
 
 if __name__ == "__main__":
