@@ -1,0 +1,255 @@
+{
+    "triangle_id": "nen5104_lutum_silt_zand_grind",
+    "total": 100,
+    "components": [
+        {
+            "key": "grind",
+            "label": "Grind",
+            "corner": "left"
+        },
+        {
+            "key": "sand",
+            "label": "Zand",
+            "corner": "right"
+        },
+        {
+            "key": "lutum_silt",
+            "label": "Lutum+silt",
+            "corner": "top"
+        }
+    ],
+    "classification_label": "Classificatie",
+    "title": "NEN 5104 - lutum+silt-zand-grind classification triangle",
+    "source": {
+        "document": "NEN 5104",
+        "figure": "Figuur 2 - Indeling van de lutum+silt-zand-grinddriehoek",
+        "reference_file": "NEN5104_Sept_1989_Geotechniek_Classificatie_van_onverh_grondmonsters.pdf",
+        "names_table": "Tabel 2 - Benaming van mengsels in de lutum+silt-zand-grinddriehoek volgens figuur 2"
+    },
+    "digitization_note": "Grid values were provided directly by the user after reading the source figure: grind axis (bottom edge, left->right) 100,90,70,50,30,15,5,0; lutum+silt axis (left edge, top->bottom) 100,95,85,70,20,0; sand axis (right edge, apex->corner) has only 3 internal ticks: 10,30,50. The user confirmed: (1) grind>=30% is the G/g main-name boundary (Gs/Gz1-4 vs g1/g2/g3); (2) within grind>=30%, lutum+silt>=20% separates Gs from the Gz1-4 row; (3) within the Gz1-4 row, sand cutoffs 10/30/50 separate Gz1|Gz2|Gz3|Gz4, with Gz4's upper edge capped by the grind=30 boundary rather than a fixed sand%. The g1/g2/g3 sub-boundaries (grind 5 and 15) were NOT explicitly confirmed by the user - they are this digitization's own assumption (see 'g1_g2_g3_note'), used only to keep those regions visible/labeled; no Ic value is assigned to them. Geometry was verified by checking that every polygon edge matches its neighbor exactly (see verify_gravel_geometry.py) and that all 8 polygons exactly tile the outer triangle with no gaps.",
+    "g1_g2_g3_note": "g1/g2/g3 (zwak/matig/sterk grindig) are gravel MODIFIERS applied to a main name determined by the lutum-silt-zand triangle, not standalone classes here. Their internal dividers (grind=5, grind=15) reuse the same tick values printed on the grind axis but were not individually confirmed by the user for this sub-split; only the outer grind=30 boundary (separating them from Gs/Gz1-4) was confirmed. This has no effect on the Ic mapping, which only covers Gs/Gz1-4.",
+    "polygons": [
+        {
+            "code": "Gz1",
+            "dutch_name": "grind, zwak zandig",
+            "english_name": "Gravel, slightly sandy",
+            "main_group": "grind",
+            "vertices": [
+                {
+                    "grind": 100,
+                    "sand": 0,
+                    "lutum_silt": 0
+                },
+                {
+                    "grind": 80,
+                    "sand": 0,
+                    "lutum_silt": 20
+                },
+                {
+                    "grind": 70,
+                    "sand": 10,
+                    "lutum_silt": 20
+                },
+                {
+                    "grind": 90,
+                    "sand": 10,
+                    "lutum_silt": 0
+                }
+            ],
+            "source_note": "grind 80-100 (left boundary at the pure-grind corner), sand 0-10, lutum+silt 0-20"
+        },
+        {
+            "code": "Gz2",
+            "dutch_name": "grind, matig zandig",
+            "english_name": "Gravel, moderately sandy",
+            "main_group": "grind",
+            "vertices": [
+                {
+                    "grind": 90,
+                    "sand": 10,
+                    "lutum_silt": 0
+                },
+                {
+                    "grind": 70,
+                    "sand": 10,
+                    "lutum_silt": 20
+                },
+                {
+                    "grind": 50,
+                    "sand": 30,
+                    "lutum_silt": 20
+                },
+                {
+                    "grind": 70,
+                    "sand": 30,
+                    "lutum_silt": 0
+                }
+            ],
+            "source_note": "sand 10-30, lutum+silt 0-20"
+        },
+        {
+            "code": "Gz3",
+            "dutch_name": "grind, sterk zandig",
+            "english_name": "Gravel, strongly sandy",
+            "main_group": "grind",
+            "vertices": [
+                {
+                    "grind": 70,
+                    "sand": 30,
+                    "lutum_silt": 0
+                },
+                {
+                    "grind": 50,
+                    "sand": 30,
+                    "lutum_silt": 20
+                },
+                {
+                    "grind": 30,
+                    "sand": 50,
+                    "lutum_silt": 20
+                },
+                {
+                    "grind": 50,
+                    "sand": 50,
+                    "lutum_silt": 0
+                }
+            ],
+            "source_note": "sand 30-50, lutum+silt 0-20"
+        },
+        {
+            "code": "Gz4",
+            "dutch_name": "grind, uiterst zandig",
+            "english_name": "Gravel, extremely sandy",
+            "main_group": "grind",
+            "vertices": [
+                {
+                    "grind": 50,
+                    "sand": 50,
+                    "lutum_silt": 0
+                },
+                {
+                    "grind": 30,
+                    "sand": 50,
+                    "lutum_silt": 20
+                },
+                {
+                    "grind": 30,
+                    "sand": 70,
+                    "lutum_silt": 0
+                }
+            ],
+            "source_note": "sand 50 up to the grind=30 boundary (triangular; sand=70 at lutum+silt=0), lutum+silt 0-20"
+        },
+        {
+            "code": "Gs",
+            "dutch_name": "grind, siltig",
+            "english_name": "Gravel, silty",
+            "main_group": "grind",
+            "vertices": [
+                {
+                    "grind": 30,
+                    "sand": 0,
+                    "lutum_silt": 70
+                },
+                {
+                    "grind": 80,
+                    "sand": 0,
+                    "lutum_silt": 20
+                },
+                {
+                    "grind": 30,
+                    "sand": 50,
+                    "lutum_silt": 20
+                }
+            ],
+            "source_note": "grind 30-80, lutum+silt >= 20 (the fines-dominant band above the Gz1-4 row); ungraded (no zwak/matig/sterk split), matching the single 'siltig' qualifier in Tabel 2"
+        },
+        {
+            "code": "g1",
+            "dutch_name": "zwak grindig",
+            "english_name": "Slightly gravelly (modifier only)",
+            "main_group": "grindig-modifier",
+            "vertices": [
+                {
+                    "grind": 5,
+                    "sand": 0,
+                    "lutum_silt": 95
+                },
+                {
+                    "grind": 0,
+                    "sand": 0,
+                    "lutum_silt": 100
+                },
+                {
+                    "grind": 0,
+                    "sand": 100,
+                    "lutum_silt": 0
+                },
+                {
+                    "grind": 5,
+                    "sand": 95,
+                    "lutum_silt": 0
+                }
+            ],
+            "source_note": "grind 0-5; main name comes from the lutum-silt-zand triangle, not from here"
+        },
+        {
+            "code": "g2",
+            "dutch_name": "matig grindig",
+            "english_name": "Moderately gravelly (modifier only)",
+            "main_group": "grindig-modifier",
+            "vertices": [
+                {
+                    "grind": 15,
+                    "sand": 0,
+                    "lutum_silt": 85
+                },
+                {
+                    "grind": 5,
+                    "sand": 0,
+                    "lutum_silt": 95
+                },
+                {
+                    "grind": 5,
+                    "sand": 95,
+                    "lutum_silt": 0
+                },
+                {
+                    "grind": 15,
+                    "sand": 85,
+                    "lutum_silt": 0
+                }
+            ],
+            "source_note": "grind 5-15; main name comes from the lutum-silt-zand triangle, not from here"
+        },
+        {
+            "code": "g3",
+            "dutch_name": "sterk grindig",
+            "english_name": "Strongly gravelly (modifier only)",
+            "main_group": "grindig-modifier",
+            "vertices": [
+                {
+                    "grind": 30,
+                    "sand": 0,
+                    "lutum_silt": 70
+                },
+                {
+                    "grind": 15,
+                    "sand": 0,
+                    "lutum_silt": 85
+                },
+                {
+                    "grind": 15,
+                    "sand": 85,
+                    "lutum_silt": 0
+                },
+                {
+                    "grind": 30,
+                    "sand": 70,
+                    "lutum_silt": 0
+                }
+            ],
+            "source_note": "grind 15-30; main name comes from the lutum-silt-zand triangle, not from here"
+        }
+    ]
+}

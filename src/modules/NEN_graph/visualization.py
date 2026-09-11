@@ -265,6 +265,8 @@ def _build_hover_script(
     triangle: TriangleDefinition,
     ic_field_js: Optional[dict] = None,
     classification_label_override: Optional[str] = None,
+    unmapped_classes: Optional[list] = None,
+    unmapped_ic_text: Optional[str] = None,
 ) -> str:
     """JS snippet giving a pixel-accurate (non-snapping) coordinate/class readout.
 
@@ -281,7 +283,12 @@ def _build_hover_script(
 
     `ic_field_js` and `classification_label_override` are optional and only
     used by the Ic visualization; when omitted (the default), the generated
-    script is unchanged from the plain triangle behavior. `ic_field_js` must
+    script is unchanged from the plain triangle behavior. `unmapped_classes`
+    (a list of class codes with no Ic value, e.g. gravel modifier-only
+    fields) and `unmapped_ic_text` are also optional and default to
+    unchanged behavior (no extra line) when omitted; when given, hovering
+    inside one of those classes shows `unmapped_ic_text` in place of a
+    numeric Ic reading. `ic_field_js` must
     be `IcSurface.to_js_field()` output: `{"points": [[x, y], ...],
     "simplices": [[i, j, k], ...], "values": [...]}` - the single global
     Delaunay triangulation and its control values. The field is evaluated in
@@ -310,6 +317,8 @@ def _build_hover_script(
     classification_label_json = json.dumps(classification_label_override or _classification_label(triangle))
     total_json = json.dumps(triangle.total)
     ic_field_json = json.dumps(ic_field_js) if ic_field_js is not None else "null"
+    unmapped_classes_json = json.dumps(list(unmapped_classes) if unmapped_classes else [])
+    unmapped_ic_text_json = json.dumps(unmapped_ic_text or "")
 
     return f"""
     (function() {{
@@ -320,6 +329,8 @@ def _build_hover_script(
         var classificationLabel = {classification_label_json};
         var TOTAL = {total_json};
         var icField = {ic_field_json};
+        var unmappedClasses = {unmapped_classes_json};
+        var unmappedIcText = {unmapped_ic_text_json};
         var TOL = 0.003;
 
         var overlay = document.createElement('div');
@@ -365,7 +376,7 @@ def _build_hover_script(
             return minD;
         }}
 
-        function classify(x, y) {{
+        function classifyCandidates(x, y) {{
             var candidates = [];
             for (var i = 0; i < polys.length; i++) {{
                 var p = polys[i];
@@ -373,6 +384,10 @@ def _build_hover_script(
                 var d = inside ? 0 : distToPolygon(x, y, p.verts);
                 if (inside || d <= TOL) candidates.push(p);
             }}
+            return candidates;
+        }}
+
+        function classify(candidates) {{
             if (candidates.length === 0) return 'unclassified';
             if (candidates.length === 1) return candidates[0].name;
             return 'boundary: ' + candidates.map(function(p) {{ return p.code; }}).join(', ');
@@ -402,6 +417,12 @@ def _build_hover_script(
                     bestVal = bary[0] * values[s[0]] + bary[1] * values[s[1]] + bary[2] * values[s[2]];
                 }}
             }}
+            // Reject extrapolation: a point genuinely outside every simplex of the
+            // field's convex hull (e.g. an unmapped/neutral region for a
+            // restricted field) has a negative "best" barycentric coordinate for
+            // ALL simplices. Matches Python's `find_simplex()==-1` -> None
+            // behavior instead of silently extrapolating from the nearest one.
+            if (bestScore < -1e-6) return null;
             return bestVal;
         }}
 
@@ -433,16 +454,20 @@ def _build_hover_script(
             }}
 
             var comp = cartesianToComposition(x, y);
+            var candidates = classifyCandidates(x, y);
             var lines = [];
             for (var k = 0; k < components.length; k++) {{
                 var c = components[k];
                 lines.push(c.label + ': ' + comp[c.key].toFixed(1) + '%');
             }}
-            lines.push(classificationLabel + ': ' + classify(x, y));
+            lines.push(classificationLabel + ': ' + classify(candidates));
             if (icField) {{
                 var meanIc = meanIcFromField(x, y);
                 if (meanIc !== null && meanIc !== undefined) {{
                     lines.push('Representative Ic: ' + meanIc.toFixed(3));
+                }} else if (unmappedClasses.length && candidates.length &&
+                    candidates.every(function(p) {{ return unmappedClasses.indexOf(p.code) !== -1; }})) {{
+                    lines.push('Representative Ic: ' + unmappedIcText);
                 }}
             }}
             overlay.innerHTML = lines.join('<br>');
