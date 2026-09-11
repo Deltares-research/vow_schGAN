@@ -632,7 +632,8 @@ def plot_nen_triangle_plotly(
 def plot_nen_triangle_with_ic(
     output_path: Optional[Path] = None,
     grid_resolution: int = 150,
-    colorscale: str = "Turbo",
+    colorscale: str = "Viridis",
+    opacity: float = 0.75,
     show_robertson_contours: bool = True,
     label_lang: str = "english",
 ):
@@ -643,6 +644,8 @@ def plot_nen_triangle_with_ic(
             to `nen5104_triangle_ic_interactive.html` next to this module.
         grid_resolution (int): number of samples per axis for the gradient mesh.
         colorscale (str): Plotly colorscale name for the Ic gradient.
+        opacity (float): 0-1 transparency of the Ic gradient background, so
+            the NEN polygon boundaries/codes underneath remain visible.
         show_robertson_contours (bool): overlay contour lines at Ic = 2.05, 2.60, 2.95.
         label_lang (str): "english" or "dutch", which name to use for hover labels.
 
@@ -681,6 +684,7 @@ def plot_nen_triangle_with_ic(
     fig.add_trace(go.Contour(
         x=xs, y=ys, z=z,
         colorscale=colorscale,
+        opacity=opacity,
         contours=dict(coloring="heatmap"),  # continuous shading, no banding
         colorbar=dict(title="Representative Ic"),
         connectgaps=False,
