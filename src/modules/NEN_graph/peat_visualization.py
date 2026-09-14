@@ -36,11 +36,13 @@ from modules.NEN_graph.peat_ic_mapping import (  # noqa: E402
     get_peat_ic_surface,
 )
 from modules.NEN_graph.visualization import (  # noqa: E402
+    DEFAULT_NEN_GRAPH_OUTPUT_DIR,
     _add_axis_labels,
     _add_axis_ticks,
     _add_plotly_axis_ticks,
     _build_hover_script,
     _hex_to_rgba,
+    _sample_ic_grid,
 )
 
 logger = logging.getLogger(__name__)
@@ -61,22 +63,6 @@ ROBERTSON_IC_CONTOURS = (3.60,)
 REFERENCE_IC_CONTOURS = (3.80, 4.00, 4.20)
 COLORSCALE_IC_MIN = 3.55
 COLORSCALE_IC_MAX = 4.40
-
-
-def _sample_ic_grid(surface, grid_resolution: int):
-    xs = np.linspace(0.0, 1.0, grid_resolution)
-    ys = np.linspace(0.0, SQRT3_OVER_2, grid_resolution)
-    z = np.full((grid_resolution, grid_resolution), np.nan)
-    for j, y in enumerate(ys):
-        for i, x in enumerate(xs):
-            w_top = y / SQRT3_OVER_2
-            w_right = x - 0.5 * w_top
-            w_left = 1.0 - w_right - w_top
-            if w_left >= -1e-9 and w_right >= -1e-9 and w_top >= -1e-9:
-                value = surface.value_at_cartesian(x, y)
-                if value is not None:
-                    z[j, i] = value
-    return xs, ys, z
 
 
 def _extra_hover_lines(triangle) -> dict:
@@ -133,7 +119,8 @@ def plot_peat_triangle_static(output_path: Optional[Path] = None):
     ax.set_title(triangle.metadata.get("title", triangle.triangle_id))
 
     if output_path is None:
-        output_path = Path(__file__).parent / "nen5104_triangle_peat_render.png"
+        output_path = DEFAULT_NEN_GRAPH_OUTPUT_DIR / "peat" / "nen5104_triangle_peat_render.png"
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(str(output_path), dpi=200, bbox_inches="tight")
     return fig
 
@@ -195,7 +182,8 @@ def plot_peat_triangle_plotly(output_path: Optional[Path] = None):
 
     div_id = triangle.triangle_id.replace("_", "-") + "-plot"
     if output_path is None:
-        output_path = Path(__file__).parent / "nen5104_triangle_peat_interactive.html"
+        output_path = DEFAULT_NEN_GRAPH_OUTPUT_DIR / "peat" / "nen5104_triangle_peat_interactive.html"
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
     post_script = _build_hover_script(
         div_id, polygons, "dutch_name", triangle,
@@ -325,7 +313,8 @@ def plot_peat_triangle_with_ic(
 
     div_id = triangle.triangle_id.replace("_", "-") + "-ic-plot"
     if output_path is None:
-        output_path = Path(__file__).parent / "nen5104_triangle_peat_ic_interactive.html"
+        output_path = DEFAULT_NEN_GRAPH_OUTPUT_DIR / "peat" / "nen5104_triangle_peat_ic_interactive.html"
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
     post_script = _build_hover_script(
         div_id, polygons, "dutch_name", triangle,
@@ -417,24 +406,35 @@ def plot_peat_triangle_with_ic_static(
     )
 
     if output_path is None:
-        output_path = Path(__file__).parent / "nen5104_triangle_peat_ic_render.png"
+        output_path = DEFAULT_NEN_GRAPH_OUTPUT_DIR / "peat" / "nen5104_triangle_peat_ic_render.png"
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(str(output_path), dpi=200, bbox_inches="tight")
     return fig
 
 
 if __name__ == "__main__":
-    png_path = Path(__file__).parent / "nen5104_triangle_peat_render.png"
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Generate the peat/veen triangle geometry + Ic plots.")
+    parser.add_argument(
+        "--output-dir", type=Path, default=DEFAULT_NEN_GRAPH_OUTPUT_DIR / "peat",
+        help="Folder to write the 4 output files to (default: res/NEN_graph/peat).",
+    )
+    args = parser.parse_args()
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+
+    png_path = args.output_dir / "nen5104_triangle_peat_render.png"
     static_fig = plot_peat_triangle_static(output_path=png_path)
     print(f"Saved static render to {png_path}")
 
-    html_path = Path(__file__).parent / "nen5104_triangle_peat_interactive.html"
+    html_path = args.output_dir / "nen5104_triangle_peat_interactive.html"
     plot_peat_triangle_plotly(output_path=html_path)
     print(f"Saved interactive render to {html_path}")
 
-    ic_png_path = Path(__file__).parent / "nen5104_triangle_peat_ic_render.png"
+    ic_png_path = args.output_dir / "nen5104_triangle_peat_ic_render.png"
     plot_peat_triangle_with_ic_static(output_path=ic_png_path)
     print(f"Saved Ic static render to {ic_png_path}")
 
-    ic_html_path = Path(__file__).parent / "nen5104_triangle_peat_ic_interactive.html"
+    ic_html_path = args.output_dir / "nen5104_triangle_peat_ic_interactive.html"
     plot_peat_triangle_with_ic(output_path=ic_html_path)
     print(f"Saved Ic interactive render to {ic_html_path}")

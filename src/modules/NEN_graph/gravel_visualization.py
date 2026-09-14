@@ -33,8 +33,10 @@ from modules.NEN_graph.gravel_ic_mapping import (  # noqa: E402
     get_gravel_triangle,
 )
 from modules.NEN_graph.visualization import (  # noqa: E402
+    DEFAULT_NEN_GRAPH_OUTPUT_DIR,
     _add_plotly_axis_ticks,
     _build_hover_script,
+    _sample_ic_grid,
 )
 
 logger = logging.getLogger(__name__)
@@ -46,21 +48,7 @@ COLORSCALE_IC_MAX = 1.60
 
 _NEUTRAL_COLOR = "#d9d9d9"
 
-
-def _sample_grid(surface, grid_resolution: int):
-    xs = np.linspace(0.0, 1.0, grid_resolution)
-    ys = np.linspace(0.0, SQRT3_OVER_2, grid_resolution)
-    z = np.full((grid_resolution, grid_resolution), np.nan)
-    for j, y in enumerate(ys):
-        for i, x in enumerate(xs):
-            w_top = y / SQRT3_OVER_2
-            w_right = x - 0.5 * w_top
-            w_left = 1.0 - w_right - w_top
-            if w_left >= -1e-9 and w_right >= -1e-9 and w_top >= -1e-9:
-                value = surface.value_at_cartesian(x, y)
-                if value is not None:
-                    z[j, i] = value
-    return xs, ys, z
+_sample_grid = _sample_ic_grid  # backward-compatible alias (shared implementation lives in visualization.py)
 
 
 def plot_gravel_triangle_with_ic(
@@ -179,7 +167,8 @@ def plot_gravel_triangle_with_ic(
 
     div_id = triangle.triangle_id.replace("_", "-") + "-ic-plot"
     if output_path is None:
-        output_path = Path(__file__).parent / "nen5104_triangle_grind_ic_interactive.html"
+        output_path = DEFAULT_NEN_GRAPH_OUTPUT_DIR / "gravel" / "nen5104_triangle_grind_ic_interactive.html"
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
     post_script = _build_hover_script(
         div_id, polygons, "english_name", triangle,
@@ -270,16 +259,27 @@ def plot_gravel_triangle_with_ic_static(
     ax.set_title("NEN 5104 - lutum+silt-zand-grind: gravel main-name representative Ic")
 
     if output_path is None:
-        output_path = Path(__file__).parent / "nen5104_triangle_grind_render.png"
+        output_path = DEFAULT_NEN_GRAPH_OUTPUT_DIR / "gravel" / "nen5104_triangle_grind_render.png"
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(str(output_path), dpi=200, bbox_inches="tight")
     return fig
 
 
 if __name__ == "__main__":
-    png_path = Path(__file__).parent / "nen5104_triangle_grind_render.png"
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Generate the gravel (lutum+silt-zand-grind) triangle Ic plots.")
+    parser.add_argument(
+        "--output-dir", type=Path, default=DEFAULT_NEN_GRAPH_OUTPUT_DIR / "gravel",
+        help="Folder to write the 2 output files to (default: res/NEN_graph/gravel).",
+    )
+    args = parser.parse_args()
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+
+    png_path = args.output_dir / "nen5104_triangle_grind_render.png"
     static_fig = plot_gravel_triangle_with_ic_static(output_path=png_path)
     print(f"Saved static render to {png_path}")
 
-    html_path = Path(__file__).parent / "nen5104_triangle_grind_ic_interactive.html"
+    html_path = args.output_dir / "nen5104_triangle_grind_ic_interactive.html"
     plot_gravel_triangle_with_ic(output_path=html_path)
     print(f"Saved interactive render to {html_path}")

@@ -1,12 +1,19 @@
 """Entry point: BRO borehole XML -> composition sampling -> synthetic Ic depth profile.
 
-Prototype script (no CLI framework, no pytest) - paths/parameters are set as
-constants below, consistent with the rest of this repository's scripts.
+Prototype script (no pytest) - CLI arguments select the input BRO XML files
+and the output folder; no personal data paths are hard-coded here.
 
 Run with:
-    .venv/Scripts/python.exe src/run_borehole_to_ic_profile.py
+    .venv/Scripts/python.exe src/run_borehole_to_ic_profile.py ^
+        --cpt-xml <path/to/CPT....xml> ^
+        --borehole-xml <path/to/BHR....xml> [<path/to/BHR....xml> ...] ^
+        [--output-dir <folder>]
+
+If several --borehole-xml candidates are given, the one closest (RD
+coordinates) to the CPT is selected automatically.
 """
 
+import argparse
 import json
 import math
 import sys
@@ -24,16 +31,24 @@ from modules.borehole_ic.composition_sampling import RANDOM_SEED
 from modules.borehole_ic.verification import format_report, run_all_checks
 from modules.borehole_ic.xml_readers import read_borehole_xml, read_cpt_xml_metadata
 
-# --- input data (external OneDrive folder - not part of the git repo) ------
-DATA_DIR = Path(r"c:\Users\camposmo\OneDrive - Stichting Deltares\Documents\Projects\VOW\data\O_62_64\O_62,7")
-CPT_XML_PATH = DATA_DIR / "CPT000000061801.xml"
-CANDIDATE_BOREHOLE_XML_PATHS = [
-    DATA_DIR / "BHR000000397307.xml",
-    DATA_DIR / "BHR000000397319.xml",
-    DATA_DIR / "BHR000000397320.xml",
-]
+REPO_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_OUTPUT_DIR = REPO_ROOT / "res" / "borehole_ic"
 
-OUTPUT_DIR = Path(r"d:\codes\vow_schGAN\res\borehole_ic")
+
+def _parse_args():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--cpt-xml", type=Path, required=True, help="Path to the BRO CPT XML file.")
+    parser.add_argument(
+        "--borehole-xml", type=Path, required=True, nargs="+",
+        help="Path(s) to one or more candidate BRO borehole XML files. "
+             "If more than one is given, the closest to the CPT (RD coordinates) is selected.",
+    )
+    parser.add_argument(
+        "--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR,
+        help=f"Base output folder; a '{{borehole_id}}_{{cpt_id}}' subfolder is created inside it "
+             f"(default: {DEFAULT_OUTPUT_DIR}).",
+    )
+    return parser.parse_args()
 
 
 def _select_associated_borehole(cpt_meta: dict, candidate_paths):
@@ -48,8 +63,9 @@ def _select_associated_borehole(cpt_meta: dict, candidate_paths):
 
 
 def main():
-    cpt_meta = read_cpt_xml_metadata(CPT_XML_PATH)
-    candidates = _select_associated_borehole(cpt_meta, CANDIDATE_BOREHOLE_XML_PATHS)
+    args = _parse_args()
+    cpt_meta = read_cpt_xml_metadata(args.cpt_xml)
+    candidates = _select_associated_borehole(cpt_meta, args.borehole_xml)
 
     print("CPT:", cpt_meta)
     print("Borehole candidates by distance to CPT (m):")
@@ -66,9 +82,9 @@ def main():
         _, resampled, _ = build_synthetic_profile(borehole)
         return resampled
 
-    reference_df = build_reference_lengkeek_profile(CPT_XML_PATH)
+    reference_df = build_reference_lengkeek_profile(args.cpt_xml)
 
-    out_dir = OUTPUT_DIR / f"{borehole['bro_id']}_{cpt_meta['bro_id']}"
+    out_dir = args.output_dir / f"{borehole['bro_id']}_{cpt_meta['bro_id']}"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     layers_df.to_csv(out_dir / "layer_table.csv", index=False)

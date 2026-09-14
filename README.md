@@ -440,6 +440,22 @@ vow_schGAN/
 │       ├── get_elevation_from_AHN.py
 │       ├── uncertainty_quantification.py
 │       └── validation.py
+
+---
+
+## Related: NEN 5104 -> representative Ic workflow
+
+`src/modules/NEN_graph/` and `src/modules/borehole_ic/` implement a
+**separate** workflow from the SchemaGAN pipeline above: three NEN 5104
+classification triangles (mineral, gravel, peat/veen) with Ic mapping and
+plots, plus a BRO borehole-XML-to-synthetic-Ic-profile generator. It does
+not share config, inputs, or code paths with the SchemaGAN pipeline
+described in the rest of this file.
+
+See [src/modules/NEN_graph/README.md](src/modules/NEN_graph/README.md) for
+the directory map, exact commands, required inputs, output locations,
+verification instructions, and current supported-classes/integration
+limits.
 │
 └── .github/
     └── copilot-instructions.md             # AI assistant guidelines

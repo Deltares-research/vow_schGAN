@@ -29,6 +29,11 @@ from modules.NEN_graph.triangle_definition import TriangleDefinition  # noqa: E4
 
 logger = logging.getLogger(__name__)
 
+# Generated figures/HTML are written under res/NEN_graph/ (outside src/) by
+# default, keeping reproducible outputs out of the source tree; every
+# plotting function still accepts an explicit `output_path` override.
+DEFAULT_NEN_GRAPH_OUTPUT_DIR = Path(__file__).resolve().parents[3] / "res" / "NEN_graph"
+
 # Light, qualitative colors grouped by main soil group (klei/leem/zand).
 # NEN-specific: these distinguish classes only; they do not encode any numeric scale.
 _COLORS = {
@@ -601,7 +606,8 @@ def plot_triangle_plotly(
     )
 
     if output_path is None:
-        output_path = Path(__file__).parent / f"{triangle.triangle_id}_interactive.html"
+        output_path = DEFAULT_NEN_GRAPH_OUTPUT_DIR / f"{triangle.triangle_id}_interactive.html"
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     fig.write_html(
         str(output_path),
         div_id=div_id,
@@ -656,7 +662,7 @@ def plot_nen_triangle_plotly(
     """
     name_field = "english_name" if label_lang == "english" else "dutch_name"
     if output_path is None:
-        output_path = Path(__file__).parent / "nen5104_triangle_interactive.html"
+        output_path = DEFAULT_NEN_GRAPH_OUTPUT_DIR / "mineral" / "nen5104_triangle_interactive.html"
     return plot_triangle_plotly(
         get_nen_triangle(), output_path=output_path, colors=_COLORS,
         grid_step=grid_step, name_field=name_field,
@@ -664,6 +670,29 @@ def plot_nen_triangle_plotly(
 
 
 # --- Ic (soil behaviour type index) visualization ---------------------------
+
+ROBERTSON_IC_CONTOURS = (2.05, 2.60, 2.95)
+# Covers every class envelope's [ic_min, ic_max] and the 3 pure-corner values (§ic_mapping.py).
+COLORSCALE_IC_MIN = 1.50
+COLORSCALE_IC_MAX = 3.55
+
+
+def _sample_ic_grid(surface, grid_resolution: int):
+    import numpy as np
+
+    xs = np.linspace(0.0, 1.0, grid_resolution)
+    ys = np.linspace(0.0, SQRT3_OVER_2, grid_resolution)
+    z = np.full((grid_resolution, grid_resolution), np.nan)
+    for j, y in enumerate(ys):
+        for i, x in enumerate(xs):
+            w_top = y / SQRT3_OVER_2
+            w_right = x - 0.5 * w_top
+            w_left = 1.0 - w_right - w_top
+            if w_left >= -1e-9 and w_right >= -1e-9 and w_top >= -1e-9:
+                value = surface.value_at_cartesian(x, y)
+                if value is not None:
+                    z[j, i] = value
+    return xs, ys, z
 
 
 def plot_nen_triangle_with_ic(
@@ -771,7 +800,8 @@ def plot_nen_triangle_with_ic(
 
     div_id = triangle.triangle_id.replace("_", "-") + "-ic-plot"
     if output_path is None:
-        output_path = Path(__file__).parent / "nen5104_triangle_ic_interactive.html"
+        output_path = DEFAULT_NEN_GRAPH_OUTPUT_DIR / "mineral" / "nen5104_triangle_ic_interactive.html"
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
     post_script = _build_hover_script(
         div_id, polygons, name_field, triangle,
@@ -782,14 +812,102 @@ def plot_nen_triangle_with_ic(
     return fig
 
 
+def plot_nen_triangle_with_ic_static(
+    output_path: Optional[Path] = None,
+    grid_resolution: int = 300,
+    cmap: str = "viridis",
+    show_robertson_contours: bool = True,
+):
+    """Static matplotlib PNG rendering of the mineral-triangle Ic gradient.
+
+    Same evaluator (`IcSurface`) as the interactive HTML; numerically
+    identical colour field. Mirrors the gravel/peat static charts (same
+    viridis colormap, colourbar, Robertson contours, and axis labels).
+
+    Args:
+        output_path (Path, optional): where to save the PNG. Defaults to
+            `nen5104_triangle_ic_render.png` next to this module.
+        grid_resolution (int): number of samples per axis for the gradient mesh.
+        cmap (str): matplotlib colormap name.
+        show_robertson_contours (bool): overlay contour lines at Ic = 2.05, 2.60, 2.95.
+
+    Returns:
+        matplotlib.figure.Figure: the figure.
+    """
+    import numpy as np
+
+    triangle = get_nen_triangle()
+    polygons = get_triangle_polygons(triangle)
+    surface = get_ic_surface()
+
+    xs, ys, z = _sample_ic_grid(surface, grid_resolution)
+    zm = np.ma.masked_invalid(z)
+
+    vmin, vmax = COLORSCALE_IC_MIN, COLORSCALE_IC_MAX
+
+    fig, ax = plt.subplots(figsize=(9, 8))
+
+    mesh = ax.pcolormesh(xs, ys, zm, cmap=cmap, shading="auto", alpha=0.85, vmin=vmin, vmax=vmax, zorder=1)
+    cbar = fig.colorbar(mesh, ax=ax, fraction=0.046, pad=0.04)
+    cbar.set_label("Representative Ic")
+
+    if show_robertson_contours:
+        cs = ax.contour(xs, ys, zm, levels=list(ROBERTSON_IC_CONTOURS), colors="black", linewidths=1.0, zorder=2)
+        ax.clabel(cs, inline=True, fontsize=7, fmt="%.2f")
+
+    for code, poly in polygons.items():
+        patch = MplPolygon(
+            poly.cartesian_vertices, closed=True, fill=False,
+            edgecolor="black", linewidth=0.9, zorder=4,
+        )
+        ax.add_patch(patch)
+        cx, cy = poly.shapely_polygon.representative_point().coords[0]
+        ax.text(cx, cy, code, ha="center", va="center", fontsize=9, fontweight="bold", zorder=5)
+
+    outer = [(0.0, 0.0), (1.0, 0.0), (0.5, SQRT3_OVER_2)]
+    ax.add_patch(MplPolygon(outer, closed=True, fill=False, edgecolor="black", linewidth=1.5, zorder=6))
+
+    _add_axis_ticks(ax, triangle)
+    _add_axis_labels(ax, triangle)
+
+    ax.set_xlim(-0.30, 1.30)
+    ax.set_ylim(-0.20, 1.0)
+    ax.set_aspect("equal")
+    ax.axis("off")
+    ax.set_title("NEN 5104 - lutum-silt-zand: class-anchored representative Ic")
+
+    if output_path is None:
+        output_path = DEFAULT_NEN_GRAPH_OUTPUT_DIR / "mineral" / "nen5104_triangle_ic_render.png"
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(str(output_path), dpi=200, bbox_inches="tight")
+    return fig
+
 
 if __name__ == "__main__":
-    out_path = Path(__file__).parent / "nen5104_triangle_render.png"
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Generate the mineral (lutum-silt-zand) triangle plots.")
+    parser.add_argument(
+        "--output-dir", type=Path, default=DEFAULT_NEN_GRAPH_OUTPUT_DIR / "mineral",
+        help="Folder to write the 4 output files to (default: res/NEN_graph/mineral).",
+    )
+    args = parser.parse_args()
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+
+    out_path = args.output_dir / "nen5104_triangle_render.png"
     figure = plot_nen_triangle(interactive=False)
     figure.savefig(out_path, dpi=200, bbox_inches="tight")
     print(f"Saved static render to {out_path}")
 
-    html_path = Path(__file__).parent / "nen5104_triangle_interactive.html"
+    html_path = args.output_dir / "nen5104_triangle_interactive.html"
     plot_nen_triangle_plotly(output_path=html_path)
     print(f"Saved interactive render to {html_path}")
+
+    ic_png_path = args.output_dir / "nen5104_triangle_ic_render.png"
+    plot_nen_triangle_with_ic_static(output_path=ic_png_path)
+    print(f"Saved static Ic render to {ic_png_path}")
+
+    ic_html_path = args.output_dir / "nen5104_triangle_ic_interactive.html"
+    plot_nen_triangle_with_ic(output_path=ic_html_path)
+    print(f"Saved interactive Ic render to {ic_html_path}")
 

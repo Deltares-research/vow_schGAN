@@ -1,138 +1,188 @@
-# NEN 5104 lutum-silt-zand classification triangle
+# NEN 5104 -> representative Ic workflow
 
-This module (`src/modules/NEN_graph/`) implements the NEN 5104 soil
-classification ternary diagram ("Figuur 4 - Indeling van de
-lutum-silt-zanddriehoek") as digital geometry, a point classifier, and a
-matplotlib visualization.
+This module (`src/modules/NEN_graph/`) plus its companion module
+`src/modules/borehole_ic/` implement:
 
-## Files
+1. Three NEN 5104 ternary classification triangles, each with geometry,
+   classification, a representative-Ic mapping, and static/interactive
+   plots: **mineral** (lutum-silt-zand), **gravel** (+grind), **peat/veen**
+   (organic stof-lutum-silt+zand).
+2. A borehole workflow that reads BRO borehole + CPT XML, samples
+   compositions inside the **mineral** triangle along the borehole depth
+   axis, and produces synthetic Ic profiles (single-realization and
+   ensemble), compared against a Lengkeek reference profile from the CPT.
 
-| File | Purpose |
-|---|---|
-| `coordinates.py` | `ternary_to_cartesian` / `cartesian_to_ternary` conversion utilities. |
-| `data/nen5104_triangle.json` | Declarative source of truth: the 14 classification polygons as sand/silt/lutum percent vertices, plus Dutch/English names and metadata. |
-| `classification.py` | Loads the JSON, builds shapely polygons, and exposes `classify_composition(sand, silt, lutum)`. |
-| `visualization.py` | Draws the full triangle (ticks, fills, labels, legend, hover readout) and saves a PNG when run directly. |
-| `verify_geometry.py` | Manual (non-pytest) verification script — run it directly to re-check the geometry. |
+This is a prototype: plain scripts and hand-rolled `[PASS]/[FAIL]` checks,
+no pytest, no CLI framework beyond `argparse` for input/output paths.
 
-## Orientation
-
-- Top vertex: lutum = 100 (sand = 0, silt = 0)
-- Bottom-left vertex: sand = 100 (silt = 0, lutum = 0)
-- Bottom-right vertex: silt = 100 (sand = 0, lutum = 0)
-
-Cartesian mapping (dimensionless, 0-1 range, independent of plot size):
+## Directory map
 
 ```
-x = (silt + 0.5 * lutum) / 100
-y = (lutum * sqrt(3)/2) / 100
+src/modules/NEN_graph/            # 3 triangles: geometry, Ic mapping, plots
+  data/*.json                     # digitized polygon vertices (source of truth, do not regenerate)
+  coordinates.py                  # ternary <-> Cartesian conversions (shared)
+  classification.py               # mineral triangle: polygons + classify_composition()
+  ic_mapping.py                   # mineral triangle: canonical representative-Ic surface
+  visualization.py                # mineral triangle plots + shared plotting helpers (used by gravel/peat too)
+  ic_diagnostic.py                # mineral Ic surface diagnostics (figures + CSV summaries)
+  peat_classification.py          # peat/veen triangle: polygons + classification
+  peat_ic_mapping.py              # peat/veen triangle: representative-Ic surface (RestrictedIcSurface)
+  peat_visualization.py           # peat/veen triangle plots
+  gravel_ic_mapping.py            # gravel triangle: representative-Ic surface (RestrictedIcSurface)
+  gravel_visualization.py         # gravel triangle plots
+  triangle_definition.py          # shared Triangle/Polygon dataclasses + JSON loader
+  verify_geometry.py              # mineral geometry checks (run directly)
+  verify_peat_geometry.py         # peat geometry checks (also re-runs verify_geometry.py)
+  verify_peat_ic.py               # peat Ic-surface checks (continuity, JS/Python agreement, hover text, ...)
+
+src/modules/borehole_ic/          # borehole XML -> synthetic Ic profile (mineral triangle only)
+  xml_readers.py                  # BRO borehole (BHR_G) + CPT XML parsing
+  soil_mapping.py                 # BRO soilNameNEN5104 compound -> mineral-triangle class code
+  composition_sampling.py         # depth-correlated composition sampling within a polygon
+  profile_builder.py              # orchestrates: resolved layers -> samples -> Ic profile (1 realization)
+  ensemble.py                     # repeats profile_builder across N independent random streams
+  lengkeek_reference.py           # reference CPT classification via geolib_plus (Lengkeek 2024), not reimplemented
+  plotting.py                     # 3-panel elevation profile + triangle-with-samples figures
+  verification.py                 # checks for the single-realization profile
+
+src/run_borehole_to_ic_profile.py           # entry point: 1 borehole + 1 CPT -> profile
+src/run_ensemble_borehole_to_ic_profile.py  # entry point: N-realization ensemble for 1 borehole + 1 CPT
+
+res/NEN_graph/{mineral,gravel,peat,diagnostics}/   # generated figures/HTML/CSVs (gitignored, reproducible)
+res/borehole_ic/{borehole}_{cpt}[_ensemble]/       # generated profile outputs (gitignored, reproducible)
 ```
 
-## Class list
+Everything under `res/` is generated output (matched by the repository's
+blanket `res/` rule in `.gitignore`) and can be safely deleted/regenerated
+with the commands below. Nothing required to regenerate it lives outside
+`src/` and the external input XML files.
 
-| Code | Dutch name | English name | Main group |
-|---|---|---|---|
-| Ks1 | klei, zwak siltig | Clay, slightly silty | Klei (clay) |
-| Ks2 | klei, matig siltig | Clay, moderately silty | Klei (clay) |
-| Ks3 | klei, sterk siltig | Clay, strongly silty | Klei (clay) |
-| Ks4 | klei, uiterst siltig | Clay, extremely silty | Klei (clay) |
-| Kz1 | klei, zwak zandig | Clay, slightly sandy | Klei (clay) |
-| Kz2 | klei, matig zandig | Clay, moderately sandy | Klei (clay) |
-| Kz3 | klei, sterk zandig | Clay, strongly sandy | Klei (clay) |
-| Lz1 | leem, zwak zandig | Loam, slightly sandy | Leem (loam) |
-| Lz3 | leem, sterk zandig | Loam, strongly sandy | Leem (loam) |
-| Zk | zand, kleiig | Sand, clayey | Zand (sand) |
-| Zs1 | zand, zwak siltig | Sand, slightly silty | Zand (sand) |
-| Zs2 | zand, matig siltig | Sand, moderately silty | Zand (sand) |
-| Zs3 | zand, sterk siltig | Sand, strongly silty | Zand (sand) |
-| Zs4 | zand, uiterst siltig | Sand, extremely silty | Zand (sand) |
+## Requirements
 
-Main-group boundary rule (derived from the geometry, used only to explain
-polygon layout, not hard-coded anywhere as a separate rule):
-- Klei (clay): lutum >= 8
-- Leem (loam): lutum < 8 and sand < 50
-- Zand (sand): lutum < 8 and sand >= 50
+- The `.venv` in this repo (it has `plotly`, `shapely`, `geolib_plus`, etc.
+  installed - the default system Python does not). Always invoke scripts as:
+  ```
+  .venv\Scripts\python.exe -m src.modules.NEN_graph.<module>   # from the repo root, or
+  .venv\Scripts\python.exe src\modules\NEN_graph\<script>.py
+  ```
+- `geolib_plus` ("VOW modified build") is only needed for
+  `lengkeek_reference.py` (the reference CPT comparison / `run_*` entry
+  points). The 3 triangle modules and their verification scripts do not need it.
+- BRO borehole + CPT XML files are **not** included in this repository -
+  point `run_borehole_to_ic_profile.py` / `run_ensemble_borehole_to_ic_profile.py`
+  at your own copies via the `--cpt-xml` / `--borehole-xml` arguments (see below).
 
-## Digitization method
+## Commands
 
-The polygon vertices were **not** OCR'd or auto-extracted from the source
-PDF (it is a scanned, textless fax image). They were reconstructed from:
+### Triangle plots
 
-1. The user-supplied exact grid-line values for all three ternary axes.
-2. The user-supplied "Tabel 4" of official Dutch class names/qualifiers.
-3. One explicit non-grid exception line: the Lz1/Lz3 divider does not sit
-   on a labelled grid line; its position was given explicitly by the user.
-4. Cross-checking the visual layout of the original attached figure to
-   resolve which side of an internal split belongs to which class code
-   (see "Known assumption" below).
+Each command below writes into `res/NEN_graph/<triangle>/` by default;
+pass `--output-dir <folder>` to any of them to write elsewhere.
 
-Every boundary segment was verified to be shared **exactly** (identical
-vertex coordinates) between neighboring polygons — see `verify_geometry.py`,
-which checks:
-- every vertex sums to 100 (sand + silt + lutum)
-- every polygon is valid (no self-intersection)
-- no two polygons overlap (pairwise intersection area ~ 0)
-- the union of all 14 polygons exactly covers the outer triangle area
-- ternary <-> Cartesian round-trip conversion accuracy
-- representative points inside each polygon classify to that polygon
-- known shared-edge/shared-vertex points classify as `on_boundary` with
-  the correct candidate classes
-- invalid inputs (negative percentages, sum != 100, NaN) are rejected
+```
+# Mineral (lutum-silt-zand): geometry PNG+HTML, and Ic PNG+HTML
+.venv\Scripts\python.exe -m src.modules.NEN_graph.visualization
 
-Run it with:
+# Gravel (lutum+silt-zand-grind): Ic PNG+HTML (geometry-only chart not implemented separately)
+.venv\Scripts\python.exe -m src.modules.NEN_graph.gravel_visualization
 
-```bash
-cd src
-python modules/NEN_graph/verify_geometry.py
+# Peat/veen (organic stof-lutum-silt+zand): geometry PNG+HTML, and Ic PNG+HTML
+.venv\Scripts\python.exe -m src.modules.NEN_graph.peat_visualization
+
+# Mineral Ic-surface diagnostics: 2 figures + 2 CSVs -> res/NEN_graph/diagnostics/
+.venv\Scripts\python.exe -m src.modules.NEN_graph.ic_diagnostic
 ```
 
-All checks currently **PASS**.
+### Borehole XML -> synthetic Ic profile (single realization)
 
-## Known assumption / ambiguity
+```
+.venv\Scripts\python.exe src\run_borehole_to_ic_profile.py ^
+    --cpt-xml <path\to\CPT....xml> ^
+    --borehole-xml <path\to\BHR....xml> [<path\to\BHR....xml> ...] ^
+    [--output-dir res\borehole_ic]
+```
 
-The split between **Ks4** (clay, extremely silty) and **Kz1** (clay,
-slightly sandy) occurs along the sand = 15 grid line. This threshold value
-was given directly by the user's grid data, but which side of that
-line is "Ks4" vs. "Kz1" was inferred from the visual layout of the
-original figure (Kz1 sits closer to the sand corner than Ks4) rather than
-being stated in words. This is geometrically self-consistent (verified via
-edge-matching across the whole triangle) but is flagged here as an
-assumption in case it needs to be double-checked against the printed
-standard.
+If more than one `--borehole-xml` candidate is given, the one closest (RD
+coordinates) to the CPT is selected automatically. Outputs are written to
+`<output-dir>/<borehole_bro_id>_<cpt_bro_id>/` (a `verification_report.txt`
+with 8 `[PASS]/[FAIL]` checks is written there too).
 
-## Tolerance
+### Ensemble (N realizations)
 
-`classify_composition` uses a single tolerance (default `1e-6`, in
-percentage points) for:
-- the sum-to-100 validity check
-- the negative-value validity check
-- boundary detection (a point is considered `on_boundary` if its distance
-  to a polygon, in percent-equivalent units, is <= tolerance)
+```
+.venv\Scripts\python.exe src\run_ensemble_borehole_to_ic_profile.py ^
+    --cpt-xml <path\to\CPT....xml> ^
+    --borehole-xml <path\to\BHR....xml> ^
+    [--output-dir res\borehole_ic] [--n-realizations 20] [--base-seed 42]
+```
 
-This is far smaller than the smallest gap between adjacent class
-boundaries in this dataset (2 percentage points), so it will not
-misclassify real points while still absorbing floating-point rounding
-noise.
+Outputs are written to `<output-dir>/<borehole_bro_id>_<cpt_bro_id>_ensemble/`.
 
-## Out of scope (this phase)
+### Verification
 
-Per the task scope, this module intentionally does **not** implement: Ic
-(soil behavior index) mapping, probability fields, color gradients,
-sampling utilities, peat, gravel, borehole profiles, or layer-transition
-logic. It also does not overlay the scanned source image on the render,
-since no raster copy of "Figuur 4" exists in the repository to overlay
-against — only the rendered digital triangle is produced.
+No pytest; each script below prints `[PASS]/[FAIL]` lines and exits non-zero
+on any failure.
 
-## Usage
+```
+.venv\Scripts\python.exe src\modules\NEN_graph\verify_geometry.py      # mineral triangle geometry
+.venv\Scripts\python.exe src\modules\NEN_graph\verify_peat_geometry.py # peat triangle geometry (+ re-runs verify_geometry.py)
+.venv\Scripts\python.exe src\modules\NEN_graph\verify_peat_ic.py       # peat Ic surface (continuity, JS/Python agreement, hover text)
+.venv\Scripts\python.exe -m src.modules.NEN_graph.ic_diagnostic        # mineral Ic surface (diagnostics, not pass/fail only)
+```
+
+The single-realization and ensemble `run_*` entry points each run their own
+built-in checks and write a report/summary alongside their other outputs
+(`verification_report.txt`, `ensemble_summary.json`).
+
+**Known gap:** there is currently no dedicated Ic-surface verification
+script for the **gravel** triangle (unlike mineral's `ic_diagnostic.py` and
+peat's `verify_peat_ic.py`). This is a pre-existing gap, not introduced by
+this cleanup, and gravel's geometry itself is not covered by any
+`verify_gravel_geometry.py` either - the digitization note in
+`data/nen5104_lutum_silt_zand_grind.json` refers to such a script, but it
+does not exist in this repository.
+
+## Supported classes and integration limits
+
+- **Mineral triangle**: 14 classes (Ks1-4, Kz1-3, Lz1, Lz3, Zk, Zs1-4) -
+  fully supported end-to-end, including the borehole workflow.
+- **Gravel triangle**: 8 gravel-bearing main-name classes plus 3 unmapped
+  gravel-modifier classes (g1-g3, no numerical Ic - shown as neutral/hatched).
+  Geometry, classification and Ic plots exist; **not** wired into the
+  borehole generator.
+- **Peat/veen triangle**: 5 veen main-name classes (Vm, Vk1, Vk3, Vz1, Vz3)
+  plus 3 unmapped humus-modifier classes (h1-h3, no numerical Ic). Geometry,
+  classification and Ic plots exist; **not** wired into the borehole generator.
+- **`src/modules/borehole_ic/soil_mapping.py`** only maps BRO soil names to
+  **mineral**-triangle class codes; veen/grind-named layers are reported as
+  `unsupported` (preserved as NaN gaps in the profile, never silently
+  substituted). Extending the borehole generator to also sample within the
+  gravel/peat triangles is out of scope for this cleanup and has not been
+  implemented.
+
+## Digitization / geometry notes (mineral triangle)
+
+The polygon vertices were reconstructed from user-supplied grid-line values
+and the official NEN 5104 class table, then verified to share exact edges
+between neighboring polygons (`verify_geometry.py`). The split between
+**Ks4** (clay, extremely silty) and **Kz1** (clay, slightly sandy) along the
+sand = 15 grid line was inferred from the visual layout of the original
+figure rather than stated in words - geometrically self-consistent
+(edge-matching passes) but flagged here in case it needs to be
+double-checked against the printed standard. See the module docstrings and
+`verify_geometry.py`/`verify_peat_geometry.py` source for the full list of
+checks. The gravel/peat triangles follow the same digitization and
+verification approach (`data/*.json` `digitization_note` fields).
+
+## Usage (Python API)
 
 ```python
 from modules.NEN_graph.classification import classify_composition
 
 result = classify_composition(sand=30, silt=60, lutum=10)
 # {'status': 'inside', 'class_code': 'Kz3', 'class_name': 'Clay, strongly sandy', ...}
+
+from modules.NEN_graph.ic_mapping import get_ic_surface, calculate_mean_ic
+ic = calculate_mean_ic({"sand": 30, "silt": 60, "lutum": 10})
 ```
 
-```bash
-# from src/
-python -m modules.NEN_graph.visualization
-```

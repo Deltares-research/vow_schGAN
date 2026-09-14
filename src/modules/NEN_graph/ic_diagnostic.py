@@ -27,6 +27,7 @@ from modules.NEN_graph.ic_mapping import (  # noqa: E402
     calculate_mean_ic,
     get_ic_surface,
 )
+from modules.NEN_graph.visualization import DEFAULT_NEN_GRAPH_OUTPUT_DIR  # noqa: E402
 
 TOLERANCE = 1e-6  # allowed numerical slack for the pct_outside_envelope check
 ROBERTSON_LEVELS = (2.05, 2.60, 2.95)
@@ -292,7 +293,8 @@ def plot_ic_diagnostic_figure(xs, ys, ic_values, output_path: Path = None) -> Pa
     fig.tight_layout()
 
     if output_path is None:
-        output_path = Path(__file__).parent / "ic_diagnostic_figure.png"
+        output_path = DEFAULT_NEN_GRAPH_OUTPUT_DIR / "diagnostics" / "ic_diagnostic_figure.png"
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
     return output_path
@@ -329,7 +331,8 @@ def plot_control_point_diagnostic_figure(surface, output_path: Path = None) -> P
     fig.tight_layout()
 
     if output_path is None:
-        output_path = Path(__file__).parent / "ic_control_point_diagnostic.png"
+        output_path = DEFAULT_NEN_GRAPH_OUTPUT_DIR / "diagnostics" / "ic_control_point_diagnostic.png"
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
     return output_path
@@ -374,11 +377,13 @@ def run_diagnostic(
 
     summary_rows = _build_summary_rows(per_polygon, surface)
     if csv_path is None:
-        csv_path = Path(__file__).parent / "ic_diagnostic_summary.csv"
+        csv_path = DEFAULT_NEN_GRAPH_OUTPUT_DIR / "diagnostics" / "ic_diagnostic_summary.csv"
+    csv_path.parent.mkdir(parents=True, exist_ok=True)
     _write_summary_csv(summary_rows, csv_path)
 
     if control_csv_path is None:
-        control_csv_path = Path(__file__).parent / "ic_control_points.csv"
+        control_csv_path = DEFAULT_NEN_GRAPH_OUTPUT_DIR / "diagnostics" / "ic_control_points.csv"
+    control_csv_path.parent.mkdir(parents=True, exist_ok=True)
     _write_control_point_csv(surface, control_csv_path)
 
     figure_path = plot_ic_diagnostic_figure(xs, ys, ic_values, output_path=figure_path)
@@ -404,7 +409,22 @@ def run_diagnostic(
 
 
 if __name__ == "__main__":
-    result = run_diagnostic()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Run mineral-triangle Ic surface diagnostics (figures + CSVs).")
+    parser.add_argument(
+        "--output-dir", type=Path, default=DEFAULT_NEN_GRAPH_OUTPUT_DIR / "diagnostics",
+        help="Folder to write the 2 CSVs and 2 figures to (default: res/NEN_graph/diagnostics).",
+    )
+    args = parser.parse_args()
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+
+    result = run_diagnostic(
+        csv_path=args.output_dir / "ic_diagnostic_summary.csv",
+        control_csv_path=args.output_dir / "ic_control_points.csv",
+        figure_path=args.output_dir / "ic_diagnostic_figure.png",
+        control_figure_path=args.output_dir / "ic_control_point_diagnostic.png",
+    )
 
     print(f"Saved per-class summary CSV to {result['csv_path']}")
     print(f"Saved control-point CSV to {result['control_csv_path']}")

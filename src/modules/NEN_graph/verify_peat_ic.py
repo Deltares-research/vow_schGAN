@@ -25,6 +25,7 @@ from modules.NEN_graph.peat_ic_mapping import (  # noqa: E402
     PEAT_CLASS_TARGETS,
     get_peat_ic_surface,
 )
+from modules.NEN_graph.visualization import DEFAULT_NEN_GRAPH_OUTPUT_DIR  # noqa: E402
 
 COORD_TOL = 1e-9
 CONTINUITY_TOL = 1e-6
@@ -262,7 +263,7 @@ def main():
         value = surface.value_at_cartesian(cx, cy)
         check(f"{code} representative point has no numerical Ic (outside mapped surface)", value is None, f"got {value}")
 
-    html_path = Path(__file__).parent / "nen5104_triangle_peat_ic_interactive.html"
+    html_path = DEFAULT_NEN_GRAPH_OUTPUT_DIR / "peat" / "nen5104_triangle_peat_ic_interactive.html"
     if html_path.exists():
         html_text = html_path.read_text(encoding="utf-8")
         check(
