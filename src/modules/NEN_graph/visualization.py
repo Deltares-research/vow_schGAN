@@ -267,6 +267,7 @@ def _build_hover_script(
     classification_label_override: Optional[str] = None,
     unmapped_classes: Optional[list] = None,
     unmapped_ic_text: Optional[str] = None,
+    extra_lines_by_code: Optional[Dict[str, str]] = None,
 ) -> str:
     """JS snippet giving a pixel-accurate (non-snapping) coordinate/class readout.
 
@@ -297,6 +298,12 @@ def _build_hover_script(
     classification), applying the exact same linear interpolation as the
     Python `IcSurface.value_at_cartesian` - there is no separate/approximate
     JS scheme.
+
+    `extra_lines_by_code` (optional) is a class code -> extra hover-text
+    line, appended after the classification line whenever the hovered point
+    has exactly one candidate class; e.g. used by the peat/veen chart to
+    show whether a region supplies a main name or only a humus modifier.
+    Omitted by default (no extra line), so existing callers are unaffected.
     """
     import json
 
@@ -319,6 +326,7 @@ def _build_hover_script(
     ic_field_json = json.dumps(ic_field_js) if ic_field_js is not None else "null"
     unmapped_classes_json = json.dumps(list(unmapped_classes) if unmapped_classes else [])
     unmapped_ic_text_json = json.dumps(unmapped_ic_text or "")
+    extra_lines_json = json.dumps(dict(extra_lines_by_code) if extra_lines_by_code else {})
 
     return f"""
     (function() {{
@@ -331,6 +339,7 @@ def _build_hover_script(
         var icField = {ic_field_json};
         var unmappedClasses = {unmapped_classes_json};
         var unmappedIcText = {unmapped_ic_text_json};
+        var extraLines = {extra_lines_json};
         var TOL = 0.003;
 
         var overlay = document.createElement('div');
@@ -461,6 +470,9 @@ def _build_hover_script(
                 lines.push(c.label + ': ' + comp[c.key].toFixed(1) + '%');
             }}
             lines.push(classificationLabel + ': ' + classify(candidates));
+            if (candidates.length === 1 && extraLines[candidates[0].code] !== undefined) {{
+                lines.push(extraLines[candidates[0].code]);
+            }}
             if (icField) {{
                 var meanIc = meanIcFromField(x, y);
                 if (meanIc !== null && meanIc !== undefined) {{

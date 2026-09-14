@@ -1,0 +1,284 @@
+{
+    "triangle_id": "nen5104_organic_lutum_silt_zand",
+    "total": 100,
+    "components": [
+        {
+            "key": "silt_zand",
+            "label": "Silt+zand",
+            "corner": "left"
+        },
+        {
+            "key": "lutum",
+            "label": "Lutum",
+            "corner": "right"
+        },
+        {
+            "key": "organic_matter",
+            "label": "Organische stof",
+            "corner": "top"
+        }
+    ],
+    "classification_label": "Classificatie",
+    "title": "NEN 5104 - organische stof-lutum-silt+zand classification triangle",
+    "source": {
+        "document": "NEN 5104",
+        "figure": "Figuur 3 - Indeling van de organische stof-lutum-silt+zanddriehoek",
+        "reference_file": "NEN5104_Sept_1989_Geotechniek_Classificatie_van_onverh_grondmonsters.pdf",
+        "names_table": "Tabel 3 - Benaming van mengsels in de organische stof-lutum-silt+zanddriehoek volgens figuur 3"
+    },
+    "digitization_note": "Axis ticks read directly from Figuur 3: organische stof axis (left edge, apex->corner) 100,35,22.5,15,8,2.5,0; lutum axis (right edge, apex->corner) 0,30,55,70,84,95,100; one extra tick (92 %(m/m) silt+zand, i.e. lutum=8) is marked on the base (silt+zand) edge. Each solid/dashed main-name-band boundary is a straight line directly connecting one organic-matter tick on the left edge to the matching lutum tick on the right edge (NOT a constant-organic-content line - see 'boundary_pairs' below); vertex coordinates for every line crossing were computed algebraically from these paired percentages (see 'computed_vertices_note'), not estimated from pixels.",
+    "boundary_pairs": {
+        "Vm/[Vz1,Vk1]": {
+            "left_organic_matter": 35,
+            "right_lutum": 30
+        },
+        "[Vz1,Vk1]/[Vz3,Vk3]": {
+            "left_organic_matter": 22.5,
+            "right_lutum": 55
+        },
+        "[Vz3,Vk3]/h3": {
+            "left_organic_matter": 15,
+            "right_lutum": 70
+        },
+        "h3/h2": {
+            "left_organic_matter": 8,
+            "right_lutum": 84
+        },
+        "h2/h1": {
+            "left_organic_matter": 2.5,
+            "right_lutum": 95
+        }
+    },
+    "kleiig_zandig_divider_note": "AMBIGUITY (flagged, not invented): Table 3 states the Vk1/Vk3 (kleiig) vs Vz1/Vz3 (zandig) split 'volgt uit 4.2.1' (follows from clause 4.2.1 of the NEN 5104 text), which was not available for this digitization. The only figure data point not otherwise used is the single base-edge tick at silt+zand=92% (lutum=8%). The most parsimonious geometric reading - a single straight dashed line from the apex (organic_matter=100) through that base point, i.e. constant ratio lutum/(lutum+silt_zand)=8% within the mineral fraction - was adopted here, since it needs only that one extra labelled point (the other end is the already-labelled apex) and naturally produces the narrow Vz1/Vz3 sliver seen in the figure. This has NOT been confirmed against the actual clause 4.2.1 text and should be verified before the geometry is treated as final. The divider is only drawn/used between the Vm boundary and the h3 boundary (where it actually separates two named classes); it has no meaning above or below that range and is not extended there.",
+    "h1_lower_edge_note": "AMBIGUITY (flagged, not invented): the left/right tick sequences pair up exactly 5 internal boundaries (Vm/[Vz,Vk], [Vz,Vk]/[Vz,Vk], [Vz,Vk]/h3, h3/h2, h2/h1), leaving h1's own lower edge at organic_matter=0 (the base edge) at both the silt+zand and lutum corners - i.e. Figuur 3 gives no separate, nonzero threshold for a 'no humus modifier' band below h1. `peat_classification.classify_peat_composition` explicitly reports organic_matter<=tolerance as 'no_modifier' (overriding the geometric h1 polygon membership) rather than inventing an unsourced nonzero threshold. Confirm whether NEN 5104 clause 4.2.x defines a distinct minimum organic-matter threshold below which no modifier applies.",
+    "computed_vertices_note": "R1/R2/R3 below are the points where the kleiig/zandig divider (see 'kleiig_zandig_divider_note') crosses the Vm/[Vz,Vk], [Vz,Vk]/[Vz,Vk], and [Vz,Vk]/h3 boundary lines respectively, solved algebraically from lutum/(lutum+silt_zand)=0.08 and rounded to 4 decimal places (silt_zand is the residual 100-organic_matter-lutum of the rounded pair, so every vertex still sums to exactly 100).",
+    "polygons": [
+        {
+            "code": "Vm",
+            "dutch_name": "veen, mineraalarm",
+            "english_name": "Peat, mineral-poor",
+            "main_group": "veen",
+            "vertices": [
+                {
+                    "organic_matter": 100,
+                    "lutum": 0,
+                    "silt_zand": 0
+                },
+                {
+                    "organic_matter": 35,
+                    "lutum": 0,
+                    "silt_zand": 65
+                },
+                {
+                    "organic_matter": 70,
+                    "lutum": 30,
+                    "silt_zand": 0
+                }
+            ],
+            "source_note": "apex; left edge at organic_matter=35; right edge at lutum=30 (organic_matter=70)"
+        },
+        {
+            "code": "Vz1",
+            "dutch_name": "veen, zwak zandig",
+            "english_name": "Peat, slightly sandy",
+            "main_group": "veen",
+            "vertices": [
+                {
+                    "organic_matter": 35,
+                    "lutum": 0,
+                    "silt_zand": 65
+                },
+                {
+                    "organic_matter": 40.5488,
+                    "lutum": 4.7561,
+                    "silt_zand": 54.6951
+                },
+                {
+                    "organic_matter": 24.956,
+                    "lutum": 6.0035,
+                    "silt_zand": 69.0405
+                },
+                {
+                    "organic_matter": 22.5,
+                    "lutum": 0,
+                    "silt_zand": 77.5
+                }
+            ],
+            "source_note": "sand(silt_zand)-side sliver between the Vm boundary and the Vz1/Vz3 boundary, left of the kleiig/zandig divider"
+        },
+        {
+            "code": "Vk1",
+            "dutch_name": "veen, zwak kleiig",
+            "english_name": "Peat, slightly clayey",
+            "main_group": "veen",
+            "vertices": [
+                {
+                    "organic_matter": 40.5488,
+                    "lutum": 4.7561,
+                    "silt_zand": 54.6951
+                },
+                {
+                    "organic_matter": 70,
+                    "lutum": 30,
+                    "silt_zand": 0
+                },
+                {
+                    "organic_matter": 45,
+                    "lutum": 55,
+                    "silt_zand": 0
+                },
+                {
+                    "organic_matter": 24.956,
+                    "lutum": 6.0035,
+                    "silt_zand": 69.0405
+                }
+            ],
+            "source_note": "clay(lutum)-side region between the Vm boundary and the Vk1/Vk3 boundary, right of the kleiig/zandig divider"
+        },
+        {
+            "code": "Vz3",
+            "dutch_name": "veen, sterk zandig",
+            "english_name": "Peat, strongly sandy",
+            "main_group": "veen",
+            "vertices": [
+                {
+                    "organic_matter": 22.5,
+                    "lutum": 0,
+                    "silt_zand": 77.5
+                },
+                {
+                    "organic_matter": 24.956,
+                    "lutum": 6.0035,
+                    "silt_zand": 69.0405
+                },
+                {
+                    "organic_matter": 16.4326,
+                    "lutum": 6.6854,
+                    "silt_zand": 76.882
+                },
+                {
+                    "organic_matter": 15,
+                    "lutum": 0,
+                    "silt_zand": 85
+                }
+            ],
+            "source_note": "sand(silt_zand)-side sliver between the Vz1/Vz3 boundary and the h3 boundary, left of the kleiig/zandig divider"
+        },
+        {
+            "code": "Vk3",
+            "dutch_name": "veen, sterk kleiig",
+            "english_name": "Peat, strongly clayey",
+            "main_group": "veen",
+            "vertices": [
+                {
+                    "organic_matter": 24.956,
+                    "lutum": 6.0035,
+                    "silt_zand": 69.0405
+                },
+                {
+                    "organic_matter": 45,
+                    "lutum": 55,
+                    "silt_zand": 0
+                },
+                {
+                    "organic_matter": 30,
+                    "lutum": 70,
+                    "silt_zand": 0
+                },
+                {
+                    "organic_matter": 16.4326,
+                    "lutum": 6.6854,
+                    "silt_zand": 76.882
+                }
+            ],
+            "source_note": "clay(lutum)-side region between the Vk1/Vk3 boundary and the h3 boundary, right of the kleiig/zandig divider"
+        },
+        {
+            "code": "h3",
+            "dutch_name": "sterk humeus",
+            "english_name": "Strongly humous (modifier only)",
+            "main_group": "modifier",
+            "vertices": [
+                {
+                    "organic_matter": 15,
+                    "lutum": 0,
+                    "silt_zand": 85
+                },
+                {
+                    "organic_matter": 30,
+                    "lutum": 70,
+                    "silt_zand": 0
+                },
+                {
+                    "organic_matter": 16,
+                    "lutum": 84,
+                    "silt_zand": 0
+                },
+                {
+                    "organic_matter": 8,
+                    "lutum": 0,
+                    "silt_zand": 92
+                }
+            ],
+            "source_note": "full-width band, organic_matter 15(left)/30(right) down to 8(left)/16(right); no kleiig/zandig split - main name comes from the lutum-silt-zand(-grind) triangle"
+        },
+        {
+            "code": "h2",
+            "dutch_name": "matig humeus",
+            "english_name": "Moderately humous (modifier only)",
+            "main_group": "modifier",
+            "vertices": [
+                {
+                    "organic_matter": 8,
+                    "lutum": 0,
+                    "silt_zand": 92
+                },
+                {
+                    "organic_matter": 16,
+                    "lutum": 84,
+                    "silt_zand": 0
+                },
+                {
+                    "organic_matter": 5,
+                    "lutum": 95,
+                    "silt_zand": 0
+                },
+                {
+                    "organic_matter": 2.5,
+                    "lutum": 0,
+                    "silt_zand": 97.5
+                }
+            ],
+            "source_note": "full-width band, organic_matter 8(left)/16(right) down to 2.5(left)/5(right)"
+        },
+        {
+            "code": "h1",
+            "dutch_name": "zwak humeus",
+            "english_name": "Slightly humous (modifier only)",
+            "main_group": "modifier",
+            "vertices": [
+                {
+                    "organic_matter": 2.5,
+                    "lutum": 0,
+                    "silt_zand": 97.5
+                },
+                {
+                    "organic_matter": 5,
+                    "lutum": 95,
+                    "silt_zand": 0
+                },
+                {
+                    "organic_matter": 0,
+                    "lutum": 100,
+                    "silt_zand": 0
+                },
+                {
+                    "organic_matter": 0,
+                    "lutum": 0,
+                    "silt_zand": 100
+                }
+            ],
+            "source_note": "full-width band, organic_matter 2.5(left)/5(right) down to the organic_matter=0 base edge; see 'h1_lower_edge_note' for the no-modifier edge case"
+        }
+    ]
+}
