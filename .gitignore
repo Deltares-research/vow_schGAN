@@ -30,6 +30,9 @@ build/
 # --- Generated outputs ---
 res/
 
+# --- Local input data (copied from OneDrive; not tracked) ---
+data/
+
 analyze_mosaic_extent.py
 check_cpt_indices.py
 check_gan_file.py

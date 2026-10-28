@@ -33,7 +33,7 @@ def _text_color(fill: str) -> str:
     return "white" if (0.299 * r + 0.587 * g + 0.114 * b) < 0.45 else "black"
 
 
-def _draw_class_bands(ax, bands, color_lookup, fallback_color="#dddddd", min_label_thickness=0.05):
+def _draw_class_bands(ax, bands, color_lookup, fallback_color="#dddddd", min_label_thickness=0.05, alpha=0.85, labels=True):
     """Draw horizontal (top, bottom, key) bands on `ax` (elevation on y-axis).
 
     Bands thinner than `min_label_thickness` are still drawn (so the true,
@@ -44,8 +44,8 @@ def _draw_class_bands(ax, bands, color_lookup, fallback_color="#dddddd", min_lab
     for top, bottom, key, label_text in bands:
         color = color_lookup.get(key, fallback_color) if key is not None else fallback_color
         hatch = None if key is not None else "//"
-        ax.axhspan(bottom, top, facecolor=color, edgecolor="black", linewidth=0.4, hatch=hatch, alpha=0.85)
-        if label_text and (top - bottom) > min_label_thickness:
+        ax.axhspan(bottom, top, facecolor=color, edgecolor="black", linewidth=0.4, hatch=hatch, alpha=alpha)
+        if labels and label_text and (top - bottom) > min_label_thickness:
             ax.text(0.5, (top + bottom) / 2.0, label_text, ha="center", va="center", fontsize=7,
                     color=_text_color(color), transform=ax.get_yaxis_transform())
 
@@ -182,6 +182,88 @@ def plot_borehole_synthetic_ic(
     axes[1].set_title("Synthetic Ic realization")
     axes[1].set_xlabel("Ic (-)   * = generic class guessed from raw name")
     ic_xlim = _shared_ic_xlim(samples_df["synthetic_ic"])
+    if ic_xlim is not None:
+        axes[1].set_xlim(ic_xlim)
+
+    fig.suptitle(title)
+    fig.tight_layout()
+    if output_path is not None:
+        fig.savefig(output_path, dpi=200, bbox_inches="tight")
+    return fig
+
+
+_ROBERTSON_THRESHOLDS = (1.31, 2.05, 2.60, 2.95, 3.60)
+
+
+def plot_pair_evaluation(
+    layers_df: pd.DataFrame,
+    ensemble_df: pd.DataFrame,
+    reference_df: pd.DataFrame,
+    surface_elevation_m_nap: float,
+    n_realizations: int,
+    metrics: dict,
+    title: str,
+    output_path: Optional[Path] = None,
+):
+    """Borehole | predicted vs measured Ic (same axes) | error profile | measured CPT Lengkeek classes.
+
+    `ensemble_df` must contain ic_median/ic_p05/ic_p95, the realizations and
+    `reference_ic` (measured Ic aligned on elevation) - see `pair_evaluation.evaluate_pair`.
+    """
+    fig, axes = plt.subplots(1, 4, figsize=(17, 10), sharey=True, gridspec_kw={"width_ratios": [1.3, 2.6, 1.4, 1.6]})
+    elevation = ensemble_df["elevation_m_nap"]
+
+    # 1: borehole description (raw names for guessed layers).
+    _draw_class_bands(axes[0], _layer_bands(layers_df, surface_elevation_m_nap), CLASS_COLORS)
+    axes[0].set_title("Borehole (NEN 5104)")
+    axes[0].set_ylabel("Elevation (m NAP)")
+    axes[0].set_xticks([])
+
+    # 2: predicted ensemble and measured CPT on the same Ic axis, faint class bands for context.
+    ax = axes[1]
+    _draw_class_bands(ax, _layer_bands(layers_df, surface_elevation_m_nap, panel="ic"), CLASS_COLORS, alpha=0.18, labels=False)
+    for threshold in _ROBERTSON_THRESHOLDS:
+        ax.axvline(threshold, color="gray", linestyle=":", linewidth=0.8, zorder=1)
+    for r in range(n_realizations):
+        ax.plot(ensemble_df[f"ic_realization_{r}"], elevation, color="tab:blue", alpha=0.08, linewidth=0.5)
+    ax.fill_betweenx(elevation, ensemble_df["ic_p05"], ensemble_df["ic_p95"], color="tab:blue", alpha=0.25,
+                     label=f"predicted 5-95% ({n_realizations} realizations)")
+    ax.plot(ensemble_df["ic_median"], elevation, color="tab:blue", linewidth=1.8, label="predicted median")
+    if len(reference_df):
+        ax.plot(reference_df["reference_ic_geolib_plus"], reference_df["elevation_m_nap"], color="black",
+                linewidth=0.8, label="measured CPT Ic")
+    m = metrics["overall"]
+    if m.get("n_samples", 0):
+        title = (f"{title}\nn = {m['n_samples']} compared samples | bias {m['bias']:+.2f} | MAE {m['mae']:.2f} | "
+                 f"RMSE {m['rmse']:.2f} | r {m['pearson_r']:.2f} | measured inside band {m['fraction_inside_band']:.0%} | "
+                 f"same Robertson zone {m['robertson_zone_agreement']:.0%}")
+    else:
+        title = f"{title}\nno overlapping depth interval - nothing compared"
+    ax.set_title("Predicted vs measured Ic")
+    ax.set_xlabel("Ic (-)   dotted = Robertson zone limits")
+    ax.legend(fontsize=7, loc="lower right", framealpha=0.9)
+
+    # 3: error profile with the band expressed relative to the measured value.
+    ax = axes[2]
+    ax.axvline(0, color="black", linewidth=0.8)
+    ax.fill_betweenx(elevation, ensemble_df["ic_p05"] - ensemble_df["reference_ic"],
+                     ensemble_df["ic_p95"] - ensemble_df["reference_ic"], color="tab:red", alpha=0.2, label="5-95%")
+    ax.plot(ensemble_df["error"], elevation, color="tab:red", linewidth=1.0, label="median")
+    ax.set_title("Error: predicted - measured")
+    ax.set_xlabel("Ic error (-)")
+    ax.legend(fontsize=7, loc="lower right", framealpha=0.9)
+    finite_err = ensemble_df[["error"]].dropna()
+    if len(finite_err):
+        lim = max(0.5, float(np.nanpercentile(np.abs(ensemble_df["error"]), 99)) * 1.1)
+        ax.set_xlim(-lim, lim)
+
+    # 4: measured CPT Lengkeek classification.
+    _draw_class_bands(axes[3], _reference_lengkeek_bands(reference_df), _LENGKEEK_COLORS, min_label_thickness=0.35)
+    axes[3].set_title("Measured CPT - Lengkeek")
+    axes[3].set_xticks([])
+
+    ic_cols = [f"ic_realization_{r}" for r in range(n_realizations)]
+    ic_xlim = _shared_ic_xlim(ensemble_df[ic_cols].stack(), reference_df.get("reference_ic_geolib_plus", pd.Series(dtype=float)))
     if ic_xlim is not None:
         axes[1].set_xlim(ic_xlim)
 

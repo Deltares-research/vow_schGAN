@@ -129,6 +129,25 @@ Writes `<BRO_ID>_synthetic_ic.csv` per borehole, `_plots\<BRO_ID>.png`
 used, unsupported soil names). Unsupported layers are labelled in the plots
 with their raw BRO soil name, prefixed with `?`.
 
+### Pair evaluation: predicted (borehole) vs measured (nearby CPT) Ic
+
+```
+.venv\Scripts\python.exe src\extract_bro_xml_coords.py --input-dir <borehole folder> --output-csv <borehole_coords.csv>
+.venv\Scripts\python.exe src\find_cpt_borehole_pairs.py --cpt-csv <cpt_coords.csv> --borehole-csv <borehole_coords.csv> --output-csv <pairs.csv> [--max-distance 3]
+.venv\Scripts\python.exe src\run_pair_evaluation.py --pairs-csv <pairs.csv> --cpt-dir <CPT folder> --borehole-dir <borehole folder> --output-dir <folder> [--n-realizations 20] [--base-seed 42] [--limit N]
+```
+
+CPTs may be `.gef` or BRO `.xml` (searched recursively; names match the full
+file stem or its leading `CPT...` id). The measured Ic is geolib_plus's Ic
+(Lengkeek 2024 interpretation, default groundwater lookup) aligned onto the
+borehole grid by elevation (m NAP). Error = predicted ensemble median - measured.
+Outputs: `pair_metrics.csv`, `class_metrics.csv`, `layer_metrics.csv`,
+`all_compared_samples.csv`, `robertson_zone_confusion.csv`, `summary.json`,
+`per_pair/<CPT>_<BHR>.png` (borehole | predicted vs measured Ic | error |
+Lengkeek) and pooled figures in `plots/`. These are descriptive comparisons for
+the selected pairs, not a calibrated validation: part of the disagreement is
+genuine ground variation between the two locations.
+
 ### Verification
 
 No pytest; each script below prints `[PASS]/[FAIL]` lines and exits non-zero

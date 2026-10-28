@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 from geolib_plus.bro_xml_cpt import BroXmlCpt
 from geolib_plus.cpt_utils.NEN9997 import NEN_classification
+from geolib_plus.gef_cpt import GefCpt
 from geolib_plus.robertson_cpt_interpretation import InterpretationMethod, RobertsonCptInterpretation
 
 LENGKEEK_IMPLEMENTATION_NOTE = (
@@ -24,16 +25,23 @@ LENGKEEK_IMPLEMENTATION_NOTE = (
 )
 
 
-def build_reference_lengkeek_profile(cpt_xml_path: Union[str, Path]) -> pd.DataFrame:
-    """Interpret a BRO CPT XML with the Lengkeek (2024) method via `geolib_plus`.
+def build_reference_lengkeek_profile(cpt_path: Union[str, Path]) -> pd.DataFrame:
+    """Interpret a CPT file with the Lengkeek (2024) method via `geolib_plus`.
+
+    Accepts a BRO CPT XML (`BroXmlCpt`) or a GEF file (`GefCpt`), chosen by
+    file extension; both go through the same pre-processing and
+    interpretation. The groundwater level is geolib_plus's default (looked
+    up from its bundled NetCDF by the CPT coordinates) for both formats.
 
     Returns:
         pandas.DataFrame with columns: depth_m, elevation_m_nap, lithology_index,
-        main_group (Dutch), qualifier (Dutch), Ic (geolib_plus's own Ic, kept
-        only as a cross-reference - NOT used anywhere in the synthetic profile).
+        main_group (Dutch), qualifier (Dutch), reference_ic_geolib_plus
+        (geolib_plus's own Ic - used only as the measured comparison, never
+        in the synthetic profile).
     """
-    cpt = BroXmlCpt()
-    cpt.read(Path(cpt_xml_path))
+    cpt_path = Path(cpt_path)
+    cpt = GefCpt() if cpt_path.suffix.lower() == ".gef" else BroXmlCpt()
+    cpt.read(cpt_path)
     cpt.pre_process_data()
 
     interpretation = RobertsonCptInterpretation(interpretation_method=InterpretationMethod.LENGKEEK_2024)
