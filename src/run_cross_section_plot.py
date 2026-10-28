@@ -42,7 +42,7 @@ from modules.cross_section.cs_augment import augment_cross_section, occupied_col
 from modules.cross_section.cs_data import (  # noqa: E402
     collect_cross_section, find_profile, load_coordinate_index, read_guide, read_profile_line, schemagan_frame, split_names,
 )
-from modules.cross_section.cs_matrix import build_matrix, write_matrix_csv, write_metadata  # noqa: E402
+from modules.cross_section.cs_matrix import build_matrix, write_frame_json, write_matrix_csv, write_metadata  # noqa: E402
 from modules.cross_section.cs_plot import plot_cross_section, plot_matrix_preview  # noqa: E402
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
@@ -110,6 +110,8 @@ def main():
         write_matrix_csv(matrix, matrix_file)
         write_metadata(out_dir / f"{stem}_schemagan_input_info.txt", f"{row.cs_name} (cs_id {row.cs_id})",
                        frame, assignments, matrix, matrix_file.name)
+        write_frame_json(out_dir / f"{stem}_schemagan_frame.json", frame, assignments,
+                         profile_filled=f"{stem}_profile_filled.csv" if line.elevation_gaps else profile_path.name)
         fig = plot_matrix_preview(matrix, frame, assignments,
                                   title=f"SchemaGAN input {frame.n_cols} x {frame.n_rows} - cross-section {row.cs_name}",
                                   output_path=out_dir / f"{stem}_schemagan_input.png")

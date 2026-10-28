@@ -17,8 +17,14 @@ Rules (design decisions):
   stands for the interval halfway to its neighbours; missing Ic values
   (e.g. unsupported borehole layers) count as not covered.
 - Data above the frame top or below the frame bottom is not used.
+- Top fill: when a column's first value lies below row 0, rows 0 .. first-1
+  are filled with that first value. A column starting under a block of zeros
+  made SchemaGAN raise its first value by up to ~0.8 Ic (edge effect); with
+  the fill the first value is reproduced. The filled cells lie mostly above the
+  ground surface and are removed again by the surface mask after generation.
 """
 
+import json
 from pathlib import Path
 from typing import Dict, List, Tuple
 
@@ -96,8 +102,13 @@ def build_matrix(tests: pd.DataFrame, ic_profiles: pd.DataFrame, frame) -> Tuple
         ranked = sorted(group.itertuples(), key=lambda t: (*_priority(t), abs(t.distance_along_m - t.column_centre_m)))
         winner = ranked[0]
         values, coverage = column_values(ic_profiles[ic_profiles["name"] == winner.name], frame)
-        matrix[:, col] = values
         filled = np.flatnonzero(values)
+        n_top_filled = 0
+        if len(filled) and filled[0] > 0:
+            n_top_filled = int(filled[0])
+            values = values.copy()
+            values[: filled[0]] = values[filled[0]]
+        matrix[:, col] = values
         for t in ranked:
             rows.append({
                 "number": t.number, "name": t.name, "kind": t.kind, "augmented": bool(t.augmented),
@@ -110,8 +121,12 @@ def build_matrix(tests: pd.DataFrame, ic_profiles: pd.DataFrame, frame) -> Tuple
                 "n_rows_filled": int(len(filled)) if t is winner else 0,
                 "first_row_coverage": round(float(coverage[filled[0]]), 2) if t is winner and len(filled) else None,
                 "last_row_coverage": round(float(coverage[filled[-1]]), 2) if t is winner and len(filled) else None,
+                "top_fill_rows": n_top_filled if t is winner else 0,
+                "top_fill_value": round(float(values[0]), 4) if t is winner and n_top_filled else None,
             })
     assignments = pd.DataFrame(rows).sort_values(["column", "used"], ascending=[True, False]).reset_index(drop=True)
+    for col in ("first_row", "last_row"):
+        assignments[col] = assignments[col].astype("Int64")
     return matrix, assignments
 
 
@@ -120,6 +135,20 @@ def write_matrix_csv(matrix: np.ndarray, path: Path):
     with open(path, "w", encoding="utf-8", newline="\n") as f:
         for row in matrix:
             f.write(",".join("0" if v == 0 else f"{v:.4f}" for v in row) + "\n")
+
+
+def write_frame_json(path: Path, frame, assignments: pd.DataFrame, profile_filled: str):
+    """Machine-readable frame + column assignments, used by the generation/masking step."""
+    used = assignments[assignments["used"]]
+    data = {
+        "n_rows": frame.n_rows, "n_cols": frame.n_cols,
+        "left_m": frame.left_m, "right_m": frame.right_m,
+        "top_m_nap": frame.top_m_nap, "bottom_m_nap": frame.bottom_m_nap,
+        "col_width_m": frame.col_width_m, "row_height_m": frame.row_height_m,
+        "profile_csv": profile_filled,
+        "data_columns": [{"column": int(r.column), "name": r.name, "augmented": bool(r.augmented)} for r in used.itertuples()],
+    }
+    Path(path).write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
 def write_metadata(path: Path, cs_label: str, frame, assignments: pd.DataFrame, matrix: np.ndarray, matrix_file: str):
@@ -142,6 +171,8 @@ def write_metadata(path: Path, cs_label: str, frame, assignments: pd.DataFrame, 
         f"  row value = {ROW_STATISTIC} of the test's Ic samples in the row, only if the test's valid data covers "
         f">= {MIN_ROW_COVERAGE:.0%} of the row height; otherwise 0",
         "  one test per column: real CPT > real borehole > augmented copy",
+        "  top fill: rows above a column's first value are filled with that first value "
+        "(columns top_fill_rows / top_fill_value; removed again by the surface mask)",
         "",
         f"Columns with data: {len(used)}; non-zero cells: {int(np.count_nonzero(matrix))}; "
         f"Ic range in matrix: {matrix[matrix > 0].min():.3f} - {matrix.max():.3f}" if np.count_nonzero(matrix) else
@@ -150,8 +181,10 @@ def write_metadata(path: Path, cs_label: str, frame, assignments: pd.DataFrame, 
         "Column assignments",
     ]
     table = assignments.copy()
-    table["copy_of"] = table["copy_of"].fillna("")
-    table["dropped_reason"] = table["dropped_reason"].fillna("")
+    for col in ("copy_of", "dropped_reason"):
+        table[col] = table[col].fillna("")
+    for col in ("first_row", "last_row", "first_row_coverage", "last_row_coverage", "top_fill_value"):
+        table[col] = table[col].astype(object).where(table[col].notna(), "")
     lines.append(table.to_string(index=False))
     lines += ["", "Row elevations (m NAP)"]
     lines += [f"  row {i:2d}: {edges[i]:7.3f} to {edges[i + 1]:7.3f}" for i in range(frame.n_rows)]

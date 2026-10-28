@@ -199,6 +199,48 @@ def create_custom_ic_colormap_OLD(
     return cmap, vmin, vmax
 
 
+# Six soil-behaviour classes on Ic: Robertson zones, with all Ic below 2.05
+# treated as sand (no separate gravelly-sand class 7) and the clay zone split
+# into 3a (clay) and 3b (potential organic clay) at the proposed Ic = 3.30.
+# Each class: (code, label, lower Ic, upper Ic, light colour, dark colour);
+# lower bound inclusive, upper exclusive. The outer bounds (1.0 and 4.5) only
+# set the displayed range: values below 1.0 are still sand and values above
+# 4.5 still class 2.
+IC_SOIL_CLASSES = [
+    ("6", "sand (incl. Ic < 1.31)", 1.00, 2.05, (1.00, 0.90, 0.10), (0.95, 0.70, 0.00)),
+    ("5", "sand mixtures", 2.05, 2.60, (1.00, 0.65, 0.10), (0.90, 0.40, 0.00)),
+    ("4", "silt mixtures", 2.60, 2.95, (0.10, 0.80, 1.00), (0.00, 0.45, 0.95)),
+    ("3a", "clay - silty clay to clay", 2.95, 3.30, (0.20, 0.95, 0.20), (0.00, 0.55, 0.10)),
+    ("3b", "organic clay (potential)", 3.30, 3.60, (0.90, 0.97, 0.88), (0.74, 0.89, 0.72)),
+    ("2", "organic soils / peat (potential)", 3.60, 4.50, (1.00, 0.20, 0.20), (0.70, 0.00, 0.00)),
+]
+
+
+def ic_class_boundaries() -> list:
+    """Internal class boundaries (1.31 ... 3.60), increasing."""
+    return [c[3] for c in IC_SOIL_CLASSES[:-1]]
+
+
+def create_ic_class_colormap(n_bins: int = 4096) -> Tuple[ListedColormap, float, float]:
+    """Colormap for IC_SOIL_CLASSES: one light-to-dark ramp per class, sharp jumps at the class boundaries.
+
+    The many bins keep each boundary within (vmax - vmin) / n_bins (< 0.001 Ic) of its exact value.
+    Values below vmin take the lightest sand colour, above vmax the darkest class-2 colour.
+    """
+    vmin, vmax = IC_SOIL_CLASSES[0][2], IC_SOIL_CLASSES[-1][3]
+    centres = vmin + (np.arange(n_bins) + 0.5) * (vmax - vmin) / n_bins
+    colors = np.ones((n_bins, 4))
+    for _, _, lower, upper, light, dark in IC_SOIL_CLASSES:
+        sel = (centres >= lower) & (centres < upper)
+        t = ((centres[sel] - lower) / (upper - lower))[:, None]
+        colors[sel, :3] = (1 - t) * np.array(light) + t * np.array(dark)
+    cmap = ListedColormap(colors, name="ic_soil_classes")
+    cmap.set_under(IC_SOIL_CLASSES[0][4])
+    cmap.set_over(IC_SOIL_CLASSES[-1][5])
+    cmap.set_bad("white")
+    return cmap, vmin, vmax
+
+
 def trace(message: str, level: int = logging.INFO, verbose: bool = True):
     """Emit a verbose message if VERBOSE mode is enabled.
 

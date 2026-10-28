@@ -215,10 +215,11 @@ def plot_matrix_preview(matrix: np.ndarray, frame: SchemaganFrame, assignments: 
     ax.set_yticks([0, 8, 16, 24, frame.n_rows - 1])
     ax.set_xlabel(f"column (0-{frame.n_cols - 1}); {frame.col_width_m:.3f} m per column, "
                   f"{frame.left_m:.1f}-{frame.right_m:.1f} m along the line")
-    ax.set_ylabel(f"row (0 = {frame.top_m_nap:.2f},\n{frame.n_rows - 1} = {frame.bottom_m_nap + frame.row_height_m:.2f} m NAP)")
+    ax.set_ylabel(f"row\n(top of 0 = {frame.top_m_nap:.2f},\nbottom of {frame.n_rows - 1} = {frame.bottom_m_nap:.2f} m NAP)",
+                  fontsize=9)
     fig.colorbar(mesh, ax=ax, pad=0.01, fraction=0.02, extend="both", ticks=ROBERTSON_THRESHOLDS).set_label("Ic (-)")
     ax.set_title(f"{title}\nwhite = 0 (no data); {len(used)} columns with data; labels = test numbers in the cross-section plot",
-                 fontsize=10)
+                 fontsize=10, pad=30)
     fig.tight_layout()
     if output_path is not None:
         save_png(fig, output_path)
