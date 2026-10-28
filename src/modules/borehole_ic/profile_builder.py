@@ -1,8 +1,19 @@
 """Orchestrate: resolved borehole layers -> sampled compositions -> synthetic Ic profile.
 
 This is the core of the workflow: it does NOT touch the triangle geometry or
-the canonical Ic surface, it only *calls* them (`classification.py`,
-`ic_mapping.py`) at sampled composition coordinates.
+the Ic surfaces, it only *calls* them at sampled composition coordinates.
+
+Each layer is routed to the triangle of its main soil noun (mineral, peat or
+gravel; see `triangles.py`) and sampled inside its class polygon there; Ic
+comes from that triangle's own surface.
+
+Transitions between two supported groups:
+- same triangle: the sampled (x, y) points are blended (smoothstep) and the
+  blended point is evaluated - unchanged from the mineral-only workflow;
+- different triangles: (x, y) positions belong to different composition
+  spaces and cannot be blended, so each side's Ic is evaluated in its own
+  triangle and the two Ic values are blended with the same smoothstep weight.
+  These rows carry no composition (NaN x/y/percentages).
 """
 
 import sys
@@ -19,9 +30,9 @@ from modules.borehole_ic.composition_sampling import (  # noqa: E402
     LayerSampler, bounded_transition_half_thickness, smoothstep,
 )
 from modules.borehole_ic.soil_mapping import map_soil_name_to_class  # noqa: E402
-from modules.NEN_graph.classification import classify_composition_generic, get_nen_triangle, get_triangle_polygons  # noqa: E402
+from modules.borehole_ic.triangles import TRIANGLES, all_composition_columns, class_polygon, spec_for_class  # noqa: E402
+from modules.NEN_graph.classification import classify_composition_generic  # noqa: E402
 from modules.NEN_graph.coordinates import cartesian_to_composition  # noqa: E402
-from modules.NEN_graph.ic_mapping import get_ic_surface  # noqa: E402
 
 DEPTH_STEP_M = 0.02  # kept as its own named constant, deliberately not reused for anything else
 TRANSITION_THICKNESS_M = 0.20  # requested transition thickness; may be shortened per-boundary (see composition_sampling)
@@ -37,8 +48,11 @@ def resolve_layers(raw_layers: List[dict]) -> List[dict]:
         merged["thickness_m"] = layer["lower_boundary_m"] - layer["upper_boundary_m"]
         merged["supported"] = mapping["supported"]
         merged["class_code"] = mapping["class_code"]
+        merged["triangle"] = mapping["triangle"]
         merged["resolved_dutch_name"] = mapping["dutch_name"]
         merged["unsupported_reason"] = mapping["reason"]
+        merged["is_guess"] = mapping["is_guess"]
+        merged["match_note"] = mapping["match_note"]
         resolved.append(merged)
     return resolved
 
@@ -139,10 +153,6 @@ def build_synthetic_profile(
         (layers_df, samples_df, run_info) where `run_info` documents the
         segment tiling and per-layer sampler fallback counts for the report.
     """
-    triangle = get_nen_triangle()
-    polygons = get_triangle_polygons(triangle)
-    surface = get_ic_surface()
-
     layers = resolve_layers(borehole["layers"])
     layers_df = pd.DataFrame(layers)
     groups = _group_supported_runs(layers)
@@ -153,14 +163,16 @@ def build_synthetic_profile(
     samplers: Dict[int, LayerSampler] = {}
     for i, group in enumerate(groups):
         if group["supported"]:
+            group["spec"] = spec_for_class(group["class_code"])
             samplers[i] = LayerSampler(
-                polygons[group["class_code"]].shapely_polygon,
+                class_polygon(group["class_code"]),
                 seed=random_seed + 1000 * i,
                 correlation_length_m=correlation_length_m,
             )
 
     surface_elevation = borehole.get("surface_elevation_m_nap")
     depth_grid = _build_depth_grid(borehole["final_depth_m"], depth_step_m)
+    composition_columns = all_composition_columns()
 
     rows = []
     for z in depth_grid:
@@ -173,48 +185,44 @@ def build_synthetic_profile(
             i = _layer_index_at_depth(layers, z)
             row.update({"is_transition": False, "source_layer_index": i, "source_class_code": group["class_code"]})
             if not group["supported"]:
-                row.update({
-                    "x": np.nan, "y": np.nan,
-                    "sand_pct": np.nan, "silt_pct": np.nan, "lutum_pct": np.nan,
-                    "evaluated_class_code": None, "synthetic_ic": np.nan, "is_fallback": False,
-                    "note": layers[i]["unsupported_reason"],
-                })
+                row.update(_empty_sample(composition_columns))
+                row["note"] = layers[i]["unsupported_reason"]
             else:
                 x, y, is_fallback = samplers[g].sample_at(z)
-                comp = cartesian_to_composition(x, y, triangle)
-                result = classify_composition_generic(comp, triangle)
-                ic = surface.value_at_cartesian(x, y)
-                row.update({
-                    "x": x, "y": y,
-                    "sand_pct": comp["sand"], "silt_pct": comp["silt"], "lutum_pct": comp["lutum"],
-                    "evaluated_class_code": result.get("class_code") or (result.get("candidate_classes") or [None])[0],
-                    "synthetic_ic": ic, "is_fallback": is_fallback, "note": None,
-                })
+                row.update(_evaluate_point(group["spec"], x, y, composition_columns))
+                row.update({"is_fallback": is_fallback, "note": layers[i]["match_note"]})
         else:
             g_from, g_to = seg["from_group"], seg["to_group"]
+            spec_from, spec_to = groups[g_from]["spec"], groups[g_to]["spec"]
             x_from, y_from, fb_from = samplers[g_from].sample_at(z)
             x_to, y_to, fb_to = samplers[g_to].sample_at(z)
             t = (z - seg["start"]) / (seg["end"] - seg["start"])
             weight = float(smoothstep(np.array([t]))[0])
-            x = (1 - weight) * x_from + weight * x_to
-            y = (1 - weight) * y_from + weight * y_to
-            comp = cartesian_to_composition(x, y, triangle)
-            result = classify_composition_generic(comp, triangle)
-            ic = surface.value_at_cartesian(x, y)
             row.update({
                 "is_transition": True, "source_layer_index": groups[g_from]["layer_indices"][-1],
                 "source_class_code": f"{groups[g_from]['class_code']}->{groups[g_to]['class_code']}",
-                "x": x, "y": y,
-                "sand_pct": comp["sand"], "silt_pct": comp["silt"], "lutum_pct": comp["lutum"],
-                "evaluated_class_code": result.get("class_code") or (result.get("candidate_classes") or [None])[0],
-                "synthetic_ic": ic, "is_fallback": (fb_from or fb_to),
-                "note": f"transition weight={weight:.3f}",
             })
+            if spec_from.key == spec_to.key:
+                x = (1 - weight) * x_from + weight * x_to
+                y = (1 - weight) * y_from + weight * y_to
+                row.update(_evaluate_point(spec_from, x, y, composition_columns))
+                row["note"] = f"transition weight={weight:.3f}"
+            else:
+                ic_from = _ic_or_nan(spec_from.surface.value_at_cartesian(x_from, y_from))
+                ic_to = _ic_or_nan(spec_to.surface.value_at_cartesian(x_to, y_to))
+                row.update(_empty_sample(composition_columns))
+                row.update({
+                    "triangle": f"{spec_from.key}->{spec_to.key}",
+                    "synthetic_ic": (1 - weight) * ic_from + weight * ic_to,
+                    "note": f"cross-triangle transition: Ic blended, weight={weight:.3f}",
+                })
+            row["is_fallback"] = fb_from or fb_to
         rows.append(row)
 
     samples_df = pd.DataFrame(rows)
     run_info = {
         "groups": [{"class_code": g["class_code"], "supported": g["supported"], "layer_indices": g["layer_indices"],
+                    "triangle": g["spec"].key if g.get("spec") else None,
                     "start": g["start"], "end": g["end"]} for g in groups],
         "segments": segments,
         "transition_half_thicknesses": half_th,
@@ -225,3 +233,28 @@ def build_synthetic_profile(
         "random_seed": random_seed,
     }
     return layers_df, samples_df, run_info
+
+
+def _ic_or_nan(value: Optional[float]) -> float:
+    return float(value) if value is not None else np.nan
+
+
+def _empty_sample(composition_columns) -> dict:
+    """No-composition values for unsupported layers and cross-triangle transitions."""
+    sample = {"triangle": None, "x": np.nan, "y": np.nan}
+    sample.update({col: np.nan for col in composition_columns})
+    sample.update({"evaluated_class_code": None, "synthetic_ic": np.nan, "is_fallback": False})
+    return sample
+
+
+def _evaluate_point(spec, x: float, y: float, composition_columns) -> dict:
+    """Composition, class and Ic of a Cartesian point in one triangle; other triangles' columns are NaN."""
+    triangle = spec.triangle
+    comp = cartesian_to_composition(x, y, triangle)
+    result = classify_composition_generic(comp, triangle)
+    sample = {"triangle": spec.key, "x": x, "y": y}
+    sample.update({col: np.nan for col in composition_columns})
+    sample.update({spec.column(k): comp[k] for k in spec.component_keys})
+    sample["evaluated_class_code"] = result.get("class_code") or (result.get("candidate_classes") or [None])[0]
+    sample["synthetic_ic"] = _ic_or_nan(spec.surface.value_at_cartesian(x, y))
+    return sample

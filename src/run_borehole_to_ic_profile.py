@@ -106,6 +106,9 @@ def main():
         "transition_half_thicknesses_m": run_info["transition_half_thicknesses"],
         "sampler_fallback_counts": run_info["fallback_counts"],
         "unsupported_layers": unsupported[["layer_index", "soil_name_nen5104", "unsupported_reason"]].to_dict("records"),
+        "guessed_generic_layers": layers_df.loc[
+            layers_df["is_guess"], ["layer_index", "soil_name_nen5104", "class_code", "match_note"]
+        ].to_dict("records"),
         "lengkeek_reference_implementation": LENGKEEK_IMPLEMENTATION_NOTE,
     }
     with open(out_dir / "metadata.json", "w", encoding="utf-8") as f:

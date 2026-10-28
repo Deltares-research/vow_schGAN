@@ -9,8 +9,10 @@ digitized triangle's `dutch_name` field, then looks it up directly against
 `get_triangle_polygons()` - so the mapping is validated against the actual
 polygon set rather than against a hand-maintained table.
 
-This module does NOT modify the triangle geometry or Ic mapping; it only
-consumes `classification.get_nen_triangle()` / `get_triangle_polygons()`.
+This module does NOT modify any triangle geometry or Ic mapping. The main
+noun selects the triangle (klei/zand/leem -> mineral, veen -> peat,
+grind -> gravel; see `triangles.py`), and the reconstructed name is looked up
+against that triangle's main-name classes.
 """
 
 import re
@@ -20,25 +22,18 @@ from typing import Dict, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # add src/ to sys.path
 
-from modules.NEN_graph.classification import get_nen_triangle, get_triangle_polygons  # noqa: E402
+from modules.borehole_ic.triangles import BASE_NOUN_TO_TRIANGLE, GENERIC_CLASS_BY_NOUN, dutch_name_to_code  # noqa: E402
 
 # Base nouns as they appear at the END of the BRO camelCase compound, and the
 # lowercase word used to rebuild the triangle's "<base>, ..." dutch_name.
 _BASE_SUFFIXES = {"Klei": "klei", "Zand": "zand", "Leem": "leem", "Veen": "veen", "Grind": "grind"}
 
-# Base nouns that are NOT represented at all in the digitized klei/silt/zand
-# triangle (organic and coarse-grained material are explicitly out of scope
-# for that triangle - see `NEN_graph/README.md`).
-_UNSUPPORTED_BASES = {
-    "veen": "organic material (veen/peat) is not represented in the digitized NEN 5104 lutum-silt-zand triangle",
-    "grind": "gravel (grind) is not represented in the digitized NEN 5104 lutum-silt-zand triangle",
-}
-
 _GRADATIONS = ["uiterst", "sterk", "matig", "zwak"]  # longest-safe order; none is a prefix of another
 
 # Canonical modifier spellings accepted after gradation-stripping and
 # grammatical "-e" agreement normalization (e.g. "zandige" -> "zandig").
-_MODIFIERS = {"zandig", "siltig", "kleiig", "grindig"}
+# "mineraalarm" is the qualifier of peat class Vm ("veen, mineraalarm").
+_MODIFIERS = {"zandig", "siltig", "kleiig", "grindig", "mineraalarm"}
 
 
 def _decompose(soil_name: str) -> Optional[Dict[str, Optional[str]]]:
@@ -81,83 +76,91 @@ def _decompose(soil_name: str) -> Optional[Dict[str, Optional[str]]]:
     return {"base": base, "gradation": gradation, "modifier": modifier}
 
 
-def _dutch_name_lookup() -> Dict[str, str]:
-    """Build `dutch_name -> class_code` from the live triangle (no hardcoded table)."""
-    triangle = get_nen_triangle()
-    polygons = get_triangle_polygons(triangle)
-    return {poly.dutch_name: code for code, poly in polygons.items()}
+def _unsupported(raw, reason, dutch_name=None, triangle=None) -> Dict[str, object]:
+    return {"raw": raw, "supported": False, "class_code": None, "triangle": triangle,
+            "dutch_name": dutch_name, "reason": reason, "is_guess": False, "match_note": None}
 
 
-_DUTCH_NAME_TO_CODE: Optional[Dict[str, str]] = None
+# Main noun NOT followed by an adjective ending ("zandig", "kleiige", ...), so
+# "zwakZandigeKlei" yields only "klei" and "zandNietGespecificeerd" yields "zand".
+_NOUN_PATTERN = re.compile(r"(klei|zand|leem|veen|grind)(?!ig)")
 
 
-def _get_dutch_name_to_code() -> Dict[str, str]:
-    global _DUTCH_NAME_TO_CODE
-    if _DUTCH_NAME_TO_CODE is None:
-        _DUTCH_NAME_TO_CODE = _dutch_name_lookup()
-    return _DUTCH_NAME_TO_CODE
+def _guess_base_noun(raw: str) -> Optional[str]:
+    """Main noun of a raw name: the decomposed base if parseable, else the last noun occurrence."""
+    parts = _decompose(raw)
+    if parts is not None:
+        return parts["base"]
+    nouns = _NOUN_PATTERN.findall(raw.lower())
+    return nouns[-1] if nouns else None
+
+
+def _with_generic_fallback(raw: str, failed: Dict[str, object]) -> Dict[str, object]:
+    """Replace an unmatched result by the generic class of the main noun found in `raw`, if any."""
+    noun = _guess_base_noun(raw)
+    if noun is None:
+        return failed
+    return {
+        "raw": raw, "supported": True, "class_code": GENERIC_CLASS_BY_NOUN[noun],
+        "triangle": BASE_NOUN_TO_TRIANGLE[noun], "dutch_name": f"{noun} (generic, guessed)",
+        "reason": None, "is_guess": True,
+        "match_note": f"no exact NEN class ({failed['reason']}); guessed generic {noun} from the raw name",
+    }
 
 
 def map_soil_name_to_class(soil_name_nen5104: Optional[str]) -> Dict[str, object]:
     """Resolve a raw `soilNameNEN5104` string to a triangle class code.
 
-    Args:
-        soil_name_nen5104 (str): the raw BRO compound Dutch soil name, e.g.
-            "zwakZandigeKlei". May be `None`/empty for a layer with no
-            recorded soil description.
+    Exact NEN classes are tried first. If none matches but the raw name
+    contains a main noun (klei/zand/leem/veen/grind, e.g. "Zand",
+    "zandNietGespecificeerd", "matigKleiigVeen"), the layer gets that noun's
+    generic class ("Zand*", "Veen*", ...; `is_guess=True`). Only names with
+    no recognisable main noun stay unsupported.
 
     Returns:
         dict: always contains:
             - "raw" (str or None): the original input, unmodified.
-            - "supported" (bool): whether a triangle class was resolved.
-            - "class_code" (str or None): e.g. "Kz1", only if supported.
+            - "supported" (bool): whether a class (exact or generic) was resolved.
+            - "class_code" (str or None): e.g. "Kz1", "Vk1" or a generic "Zand*".
+            - "triangle" (str or None): "mineral", "peat" or "gravel".
             - "dutch_name" (str or None): the reconstructed "<base>, ..." string.
             - "reason" (str or None): explanation when NOT supported.
+            - "is_guess" (bool): True for a generic class.
+            - "match_note" (str or None): why the generic class was used.
     """
-    if not soil_name_nen5104:
-        return {
-            "raw": soil_name_nen5104, "supported": False, "class_code": None,
-            "dutch_name": None, "reason": "no soilNameNEN5104 recorded for this layer",
-        }
+    raw = soil_name_nen5104
+    if not raw:
+        return _unsupported(raw, "no soilNameNEN5104 recorded for this layer")
+    result = _match_exact(raw)
+    return result if result["supported"] else _with_generic_fallback(raw, result)
 
-    parts = _decompose(soil_name_nen5104)
+
+def _match_exact(raw: str) -> Dict[str, object]:
+    """Exact NEN class lookup in the triangle of the main noun."""
+    parts = _decompose(raw)
     if parts is None:
-        return {
-            "raw": soil_name_nen5104, "supported": False, "class_code": None,
-            "dutch_name": None,
-            "reason": f"unrecognized base soil noun in {soil_name_nen5104!r} (not klei/zand/leem/veen/grind)",
-        }
+        return _unsupported(raw, f"unrecognized base soil noun in {raw!r} (not klei/zand/leem/veen/grind)")
 
     base = parts["base"]
-    if base in _UNSUPPORTED_BASES:
-        return {
-            "raw": soil_name_nen5104, "supported": False, "class_code": None,
-            "dutch_name": None, "reason": _UNSUPPORTED_BASES[base],
-        }
+    triangle = BASE_NOUN_TO_TRIANGLE[base]
 
     if parts["gradation"] is None and parts["modifier"] is None:
-        # Bare "klei"/"zand"/"leem" with no qualifier - the digitized triangle
-        # has no "pure/clean" polygon for these; do not guess a class.
-        return {
-            "raw": soil_name_nen5104, "supported": False, "class_code": None,
-            "dutch_name": None,
-            "reason": f"unqualified '{base}' (no gradation/modifier) has no corresponding polygon in the triangle",
-        }
+        # Bare "klei"/"veen"/... with no qualifier - no single class corresponds (generic fallback applies).
+        return _unsupported(
+            raw, f"unqualified '{base}' (no gradation/modifier) has no corresponding {triangle}-triangle class",
+            triangle=triangle,
+        )
 
     if parts["modifier"] is None:
-        return {
-            "raw": soil_name_nen5104, "supported": False, "class_code": None,
-            "dutch_name": None,
-            "reason": f"could not parse a recognized modifier out of {soil_name_nen5104!r}",
-        }
+        return _unsupported(raw, f"could not parse a recognized modifier out of {raw!r}", triangle=triangle)
 
     dutch_name = f"{base}, {parts['gradation'] + ' ' if parts['gradation'] else ''}{parts['modifier']}"
-    code = _get_dutch_name_to_code().get(dutch_name)
+    code = dutch_name_to_code(triangle).get(dutch_name)
     if code is None:
-        return {
-            "raw": soil_name_nen5104, "supported": False, "class_code": None,
-            "dutch_name": dutch_name,
-            "reason": f"reconstructed dutch_name {dutch_name!r} has no matching polygon in the digitized triangle",
-        }
+        return _unsupported(
+            raw, f"reconstructed dutch_name {dutch_name!r} has no matching class in the {triangle} triangle",
+            dutch_name=dutch_name, triangle=triangle,
+        )
 
-    return {"raw": soil_name_nen5104, "supported": True, "class_code": code, "dutch_name": dutch_name, "reason": None}
+    return {"raw": raw, "supported": True, "class_code": code, "triangle": triangle,
+            "dutch_name": dutch_name, "reason": None, "is_guess": False, "match_note": None}

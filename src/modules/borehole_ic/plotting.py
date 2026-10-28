@@ -9,20 +9,28 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # add src/ to sys.path
 
+from modules.borehole_ic.triangles import CLASS_COLORS  # noqa: E402
 from modules.NEN_graph.classification import get_nen_triangle  # noqa: E402
 from modules.NEN_graph.ic_mapping import get_ic_surface  # noqa: E402
-from modules.NEN_graph.visualization import _COLORS, _build_hover_script, plot_nen_triangle_with_ic  # noqa: E402
+from modules.NEN_graph.visualization import _build_hover_script, plot_nen_triangle_with_ic  # noqa: E402
 
 # Lengkeek lithology indices (1-10) have NO established color palette anywhere
 # in geolib_plus - these colors are invented purely for this figure's
 # legibility and must not be read as an authoritative Lengkeek palette.
 _LENGKEEK_COLORS = {i: c for i, c in enumerate(plt.get_cmap("tab10").colors, start=1)}
+
+
+def _text_color(fill: str) -> str:
+    """White text on dark fills (e.g. Ks1, Vm), black otherwise."""
+    r, g, b = matplotlib.colors.to_rgb(fill)
+    return "white" if (0.299 * r + 0.587 * g + 0.114 * b) < 0.45 else "black"
 
 
 def _draw_class_bands(ax, bands, color_lookup, fallback_color="#dddddd", min_label_thickness=0.05):
@@ -39,15 +47,28 @@ def _draw_class_bands(ax, bands, color_lookup, fallback_color="#dddddd", min_lab
         ax.axhspan(bottom, top, facecolor=color, edgecolor="black", linewidth=0.4, hatch=hatch, alpha=0.85)
         if label_text and (top - bottom) > min_label_thickness:
             ax.text(0.5, (top + bottom) / 2.0, label_text, ha="center", va="center", fontsize=7,
-                    transform=ax.get_yaxis_transform())
+                    color=_text_color(color), transform=ax.get_yaxis_transform())
 
 
-def _layer_bands(layers_df: pd.DataFrame, surface_elevation_m_nap: float):
-    return [
-        (surface_elevation_m_nap - row.upper_boundary_m, surface_elevation_m_nap - row.lower_boundary_m,
-         row.class_code, row.class_code or "unsupported")
-        for row in layers_df.itertuples()
-    ]
+def _layer_bands(layers_df: pd.DataFrame, surface_elevation_m_nap: float, panel: str = "borehole"):
+    """Class bands for the borehole column (`panel="borehole"`) or an Ic panel (`panel="ic"`).
+
+    Labels: exact NEN class -> class code in both panels; generic guess
+    (e.g. "Zand*") -> raw BRO soil name in the borehole column, generic code
+    in the Ic panels; unsupported -> "? <raw name>" in both.
+    """
+    bands = []
+    for row in layers_df.itertuples():
+        raw = row.soil_name_nen5104 or "no soil name"
+        if row.class_code is None:
+            label = f"? {raw}"
+        elif getattr(row, "is_guess", False) and panel == "borehole":
+            label = raw
+        else:
+            label = row.class_code
+        bands.append((surface_elevation_m_nap - row.upper_boundary_m, surface_elevation_m_nap - row.lower_boundary_m,
+                      row.class_code, label))
+    return bands
 
 
 def _reference_lengkeek_bands(reference_df: pd.DataFrame):
@@ -88,13 +109,13 @@ def plot_three_panel(
 
     # Panel 1: borehole NEN classes.
     layer_bands = _layer_bands(layers_df, surface_elevation_m_nap)
-    _draw_class_bands(axes[0], layer_bands, _COLORS)
+    _draw_class_bands(axes[0], layer_bands, CLASS_COLORS)
     axes[0].set_title("Borehole NEN 5104 classes")
     axes[0].set_ylabel("Elevation (m NAP)")
     axes[0].set_xticks([])
 
     # Panel 2: synthetic Ic realization, with the same NEN-class background shading.
-    _draw_class_bands(axes[1], layer_bands, _COLORS)
+    _draw_class_bands(axes[1], _layer_bands(layers_df, surface_elevation_m_nap, panel="ic"), CLASS_COLORS)
     axes[1].plot(samples_df["synthetic_ic"], samples_df["elevation_m_nap"], color="black", linewidth=1.0)
     axes[1].set_title("Synthetic Ic realization")
     axes[1].set_xlabel("Ic (-)")
@@ -132,6 +153,45 @@ def plot_three_panel(
     return fig
 
 
+def plot_borehole_synthetic_ic(
+    layers_df: pd.DataFrame,
+    samples_df: pd.DataFrame,
+    surface_elevation_m_nap: Optional[float],
+    title: str,
+    output_path: Optional[Path] = None,
+):
+    """Borehole NEN classes | synthetic Ic realization (no reference CPT available).
+
+    Same panels 1-2 as `plot_three_panel`. If the borehole has no surface
+    elevation, the y-axis falls back to depth below surface (shown negative).
+    """
+    has_elevation = surface_elevation_m_nap is not None and pd.notna(surface_elevation_m_nap)
+    surface = surface_elevation_m_nap if has_elevation else 0.0
+    y = samples_df["elevation_m_nap"] if has_elevation else -samples_df["depth_m"]
+
+    fig, axes = plt.subplots(1, 2, figsize=(8, 9), sharey=True, gridspec_kw={"width_ratios": [1.4, 2]})
+
+    layer_bands = _layer_bands(layers_df, surface)
+    _draw_class_bands(axes[0], layer_bands, CLASS_COLORS)
+    axes[0].set_title("Borehole NEN 5104 classes")
+    axes[0].set_ylabel("Elevation (m NAP)" if has_elevation else "Depth below surface (m, negative down)")
+    axes[0].set_xticks([])
+
+    _draw_class_bands(axes[1], _layer_bands(layers_df, surface, panel="ic"), CLASS_COLORS)
+    axes[1].plot(samples_df["synthetic_ic"], y, color="black", linewidth=1.0)
+    axes[1].set_title("Synthetic Ic realization")
+    axes[1].set_xlabel("Ic (-)   * = generic class guessed from raw name")
+    ic_xlim = _shared_ic_xlim(samples_df["synthetic_ic"])
+    if ic_xlim is not None:
+        axes[1].set_xlim(ic_xlim)
+
+    fig.suptitle(title)
+    fig.tight_layout()
+    if output_path is not None:
+        fig.savefig(output_path, dpi=200, bbox_inches="tight")
+    return fig
+
+
 def plot_ensemble_three_panel(
     layers_df: pd.DataFrame,
     ensemble_df: pd.DataFrame,
@@ -146,7 +206,7 @@ def plot_ensemble_three_panel(
 
     # Panel 1: borehole NEN classes.
     layer_bands = _layer_bands(layers_df, surface_elevation_m_nap)
-    _draw_class_bands(axes[0], layer_bands, _COLORS)
+    _draw_class_bands(axes[0], layer_bands, CLASS_COLORS)
     axes[0].set_title("Borehole NEN 5104 classes")
     axes[0].set_ylabel("Elevation (m NAP)")
     axes[0].set_xticks([])
@@ -196,8 +256,9 @@ def plot_triangle_samples(
     output_path: Path,
     title: str = "Sampled compositions overlaid on the NEN Ic field",
 ):
-    """Companion interactive triangle scatter: every actual sampled point, over the canonical Ic background.
+    """Companion interactive triangle scatter: every sampled MINERAL-triangle point, over the canonical Ic background.
 
+    Peat/gravel samples are not shown here (they belong to other triangles).
     Reuses `plot_nen_triangle_with_ic` verbatim for the background (Ic field,
     polygon boundaries, continuous-hover script) and adds one extra discrete
     scatter trace of the real sampled (x, y) points with a rich per-point
@@ -209,7 +270,7 @@ def plot_triangle_samples(
     surface = get_ic_surface()
     fig = plot_nen_triangle_with_ic(output_path=output_path)  # writes once; we overwrite below with samples added
 
-    valid = samples_df.dropna(subset=["x", "y"])
+    valid = samples_df[samples_df["triangle"] == "mineral"].dropna(subset=["x", "y"])  # peat/gravel samples live in other triangles
     hover_text = [
         (
             f"depth: {r.depth_m:.2f} m<br>elevation: {r.elevation_m_nap:.2f} m NAP<br>"

@@ -118,6 +118,17 @@ with 8 `[PASS]/[FAIL]` checks is written there too).
 
 Outputs are written to `<output-dir>/<borehole_bro_id>_<cpt_bro_id>_ensemble/`.
 
+### Batch: folder of borehole XMLs -> synthetic Ic profiles (no reference CPT)
+
+```
+.venv\Scripts\python.exe src\run_batch_boreholes_to_ic.py --input-dir <folder with BHR*.xml> --output-dir <folder> [--limit N] [--no-plots]
+```
+
+Writes `<BRO_ID>_synthetic_ic.csv` per borehole, `_plots\<BRO_ID>.png`
+(borehole classes | synthetic Ic) and `_batch_summary.csv` (status, triangles
+used, unsupported soil names). Unsupported layers are labelled in the plots
+with their raw BRO soil name, prefixed with `?`.
+
 ### Verification
 
 No pytest; each script below prints `[PASS]/[FAIL]` lines and exits non-zero
@@ -146,19 +157,43 @@ does not exist in this repository.
 
 - **Mineral triangle**: 14 classes (Ks1-4, Kz1-3, Lz1, Lz3, Zk, Zs1-4) -
   fully supported end-to-end, including the borehole workflow.
-- **Gravel triangle**: 8 gravel-bearing main-name classes plus 3 unmapped
-  gravel-modifier classes (g1-g3, no numerical Ic - shown as neutral/hatched).
-  Geometry, classification and Ic plots exist; **not** wired into the
-  borehole generator.
+- **Gravel triangle**: 5 gravel main-name classes (Gs, Gz1-Gz4) plus 3
+  unmapped gravel-modifier classes (g1-g3, no numerical Ic - shown as
+  neutral/hatched). Main-name classes are used by the borehole generator.
 - **Peat/veen triangle**: 5 veen main-name classes (Vm, Vk1, Vk3, Vz1, Vz3)
-  plus 3 unmapped humus-modifier classes (h1-h3, no numerical Ic). Geometry,
-  classification and Ic plots exist; **not** wired into the borehole generator.
-- **`src/modules/borehole_ic/soil_mapping.py`** only maps BRO soil names to
-  **mineral**-triangle class codes; veen/grind-named layers are reported as
-  `unsupported` (preserved as NaN gaps in the profile, never silently
-  substituted). Extending the borehole generator to also sample within the
-  gravel/peat triangles is out of scope for this cleanup and has not been
-  implemented.
+  plus 3 unmapped humus-modifier classes (h1-h3, no numerical Ic).
+  Main-name classes are used by the borehole generator.
+
+Borehole routing (`src/modules/borehole_ic/triangles.py`,
+`soil_mapping.py`): the main noun of the BRO `soilNameNEN5104` selects the
+triangle - klei/zand/leem -> mineral, veen -> peat, grind -> gravel - and the
+reconstructed name is matched against that triangle's main-name classes
+(e.g. `zwakKleiigVeen` -> "veen, zwak kleiig" -> Vk1, `mineraalarmVeen` ->
+Vm, `zwakZandigGrind` -> Gz1). Each layer is sampled inside its class polygon
+in its own triangle and evaluated on that triangle's Ic surface.
+
+Still unsupported (kept as NaN gaps, never silently substituted): empty soil
+names and names with no recognisable main noun (e.g. `Silt`, `onbekend`).
+
+Generic fallback (`is_guess=True`, marked with `*`): a name that matches no
+exact class but contains a main noun - e.g. `Zand`, `zandNietGespecificeerd`,
+`Veen`, `matigKleiigVeen`, `humeuzeKlei`, `matigGrindigZand` - gets that
+noun's generic class (`Klei*`, `Zand*`, `Leem*`, `Veen*`, `Grind*`). It is
+sampled over the union of all main-name classes of that noun in its triangle
+(e.g. `Zand*` = Zk + Zs1-Zs4), so its Ic spread is wider than for an exact
+class. Any secondary modifier in the raw name (e.g. "matig grindig") is
+ignored. Plots show the raw name in the borehole column and the generic code
+in the Ic panel; `_batch_summary.csv` lists them in `guessed_names`.
+
+Borehole plot colours: zand = yellows, klei = greens, veen = reds,
+leem = browns, grind = slate greys (`CLASS_COLORS` in `triangles.py`; the
+triangle charts keep their own palettes).
+
+Transitions between layers in the same triangle blend the sampled
+composition points; transitions between different triangles (e.g. Kz1 -> Vk1)
+blend the two Ic values with the same smoothstep weight and carry no
+composition. The interactive sampled-composition triangle plot shows mineral
+samples only.
 
 ## Digitization / geometry notes (mineral triangle)
 

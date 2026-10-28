@@ -13,8 +13,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # add src/ to sys.path
 
-from modules.NEN_graph.classification import get_nen_triangle, get_triangle_polygons  # noqa: E402
-from modules.NEN_graph.ic_mapping import get_ic_surface  # noqa: E402
+from modules.borehole_ic.triangles import TRIANGLES, all_composition_columns, class_polygon  # noqa: E402
 
 Check = Tuple[str, bool, str]
 
@@ -42,23 +41,28 @@ def check_vertical_alignment(samples_df: pd.DataFrame, surface_elevation_m_nap: 
 
 
 def check_composition_sums(samples_df: pd.DataFrame) -> Check:
-    valid = samples_df.dropna(subset=["sand_pct", "silt_pct", "lutum_pct"])
-    total = valid["sand_pct"] + valid["silt_pct"] + valid["lutum_pct"]
-    max_dev = (total - 100.0).abs().max() if len(valid) else 0.0
+    """Each triangle's composition columns sum to 100 wherever that triangle was sampled."""
+    n_checked, max_dev = 0, 0.0
+    for spec in TRIANGLES.values():
+        cols = [c for c in spec.columns if c in samples_df]
+        if len(cols) != 3:
+            continue
+        valid = samples_df.dropna(subset=cols)
+        if len(valid):
+            max_dev = max(max_dev, float((valid[cols].sum(axis=1) - 100.0).abs().max()))
+            n_checked += len(valid)
     ok = max_dev < 1e-6
-    return "composition_sums_to_100", ok, f"max |sum - 100| over {len(valid)} samples = {max_dev:.2e}"
+    return "composition_sums_to_100", ok, f"max |sum - 100| over {n_checked} samples = {max_dev:.2e}"
 
 
 def check_polygon_containment(samples_df: pd.DataFrame, layers_df: pd.DataFrame) -> Check:
-    triangle = get_nen_triangle()
-    polygons = get_triangle_polygons(triangle)
     from shapely.geometry import Point
 
     non_transition = samples_df[(~samples_df["is_transition"]) & samples_df["x"].notna()]
     violations = 0
     for row in non_transition.itertuples():
-        layer = layers_df.iloc[row.source_layer_index]
-        poly = polygons[layer["class_code"]].shapely_polygon
+        class_code = layers_df.iloc[row.source_layer_index]["class_code"]
+        poly = class_polygon(class_code)
         if not poly.contains(Point(row.x, row.y)) and poly.distance(Point(row.x, row.y)) > 1e-6:
             violations += 1
     ok = violations == 0
@@ -66,20 +70,32 @@ def check_polygon_containment(samples_df: pd.DataFrame, layers_df: pd.DataFrame)
 
 
 def check_ic_agreement(samples_df: pd.DataFrame) -> Check:
-    surface = get_ic_surface()
+    """Stored Ic equals a direct evaluation of the sample's own triangle surface (rows with a composition)."""
     valid = samples_df.dropna(subset=["x", "y", "synthetic_ic"])
-    recomputed = valid.apply(lambda r: surface.value_at_cartesian(r.x, r.y), axis=1)
-    max_dev = (recomputed - valid["synthetic_ic"]).abs().max() if len(valid) else 0.0
+    max_dev = 0.0
+    for row in valid.itertuples():
+        recomputed = TRIANGLES[row.triangle].surface.value_at_cartesian(row.x, row.y)
+        dev = abs(recomputed - row.synthetic_ic) if recomputed is not None else np.inf
+        max_dev = max(max_dev, dev)
     ok = max_dev < 1e-9
     return "ic_agrees_with_direct_evaluation", ok, f"max |recomputed - stored| Ic over {len(valid)} samples = {max_dev:.2e}"
+
+
+def _max_abs_diff_nan_aware(a: np.ndarray, b: np.ndarray) -> float:
+    """Max |a - b|; matching NaNs count as equal, a NaN on only one side counts as a mismatch."""
+    a_nan, b_nan = np.isnan(a), np.isnan(b)
+    if np.any(a_nan != b_nan):
+        return np.inf
+    both = ~a_nan
+    return float(np.max(np.abs(a[both] - b[both]))) if both.any() else 0.0
 
 
 def check_reproducibility(build_fn: Callable[[], pd.DataFrame]) -> Check:
     a = build_fn()
     b = build_fn()
-    numeric_cols = ["x", "y", "sand_pct", "silt_pct", "lutum_pct", "synthetic_ic"]
+    numeric_cols = ["x", "y", *all_composition_columns(), "synthetic_ic"]
     max_dev = max(
-        np.nanmax(np.abs(a[c].to_numpy(dtype=float) - b[c].to_numpy(dtype=float))) for c in numeric_cols
+        _max_abs_diff_nan_aware(a[c].to_numpy(dtype=float), b[c].to_numpy(dtype=float)) for c in numeric_cols
     )
     ok = max_dev < 1e-12
     return "reproducibility_same_seed", ok, f"max abs diff across two runs with the same seed = {max_dev:.2e}"
