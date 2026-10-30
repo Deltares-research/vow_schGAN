@@ -160,6 +160,7 @@ Get-ChildItem data\cs -Recurse -Filter *_schemagan_input.csv | ForEach-Object {
 | Ground | Gaps in `elev_NAP` interpolated linearly (flat beyond the ends) | `cs_data.fill_elevation_gaps` |
 | Real CPT Ic | geolib_plus Ic (Lengkeek 2024 interpretation, default groundwater) | `borehole_ic/lengkeek_reference.py` |
 | Borehole Ic | Synthetic Ic from the NEN 5104 triangles, one realization, seed 42; unknown names use a generic class (`Zand*`, `Veen*`, …) | `borehole_ic/` |
+| Unclassifiable layers | Layers with no recognisable soil name (e.g. `grondNietGespecificeerd`): Ic interpolated linearly between the layers above and below (nearest value at the top/bottom), plus correlated jitter as large as the neighbours' spread; labelled `~` in plots, flagged `is_interpolated` | `borehole_ic/profile_builder.fill_unsupported_gaps` |
 | Frame top | Highest ground level of the tests | `cs_data.schemagan_frame` |
 | Frame bottom | −5 m NAP | `cs_data.DESIGN_BOTTOM_M_NAP` |
 | Frame size | 512 columns (start to end of the line) × 32 rows | `cs_data.SCHEMAGAN_N_COLS / _ROWS` |

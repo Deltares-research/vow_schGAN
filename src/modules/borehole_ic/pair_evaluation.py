@@ -11,7 +11,8 @@ Conventions:
 - Only depths where both the synthetic median and the aligned measured Ic are
   finite are compared; the measured Ic is never extrapolated or bridged across
   CPT gaps (`ensemble.align_reference_to_grid`).
-- Each compared sample is tagged "exact" (exact NEN class), "guessed"
+- Each compared sample is tagged "exact" (exact NEN class), "interpolated"
+  (unsupported layer, Ic interpolated from its neighbours), "guessed"
   (generic class such as "Zand*") or "transition" (blend zone between layers).
 - Robertson zones use Ic thresholds 1.31 / 2.05 / 2.60 / 2.95 / 3.60; a value
   exactly on a threshold belongs to the finer-grained (higher-Ic) zone.
@@ -29,6 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # add src/ to sys.
 from modules.borehole_ic.ensemble import align_reference_to_grid, build_ensemble  # noqa: E402
 
 ROBERTSON_THRESHOLDS = (1.31, 2.05, 2.60, 2.95, 3.60)
+SAMPLE_CATEGORIES = ("exact", "guessed", "interpolated", "transition")
 ROBERTSON_ZONE_NAMES = {
     7: "7 gravelly/dense sand",
     6: "6 sand",
@@ -96,7 +98,8 @@ def evaluate_pair(
     is_guess = layers_df["is_guess"].to_numpy(dtype=bool)
     layer_idx = ensemble_df["source_layer_index"].astype(int).to_numpy()
     ensemble_df["sample_category"] = np.where(
-        ensemble_df["is_transition"], "transition", np.where(is_guess[layer_idx], "guessed", "exact"),
+        ensemble_df["is_transition"], "transition",
+        np.where(ensemble_df["is_interpolated"], "interpolated", np.where(is_guess[layer_idx], "guessed", "exact")),
     )
     ensemble_df["zone_synthetic"] = robertson_zone(ensemble_df["ic_median"])
     ensemble_df["zone_measured"] = robertson_zone(ensemble_df["reference_ic"])
@@ -104,7 +107,7 @@ def evaluate_pair(
     samples = ensemble_df.dropna(subset=["ic_median", "reference_ic"]).copy()
 
     metrics = {"overall": compute_metrics(samples)}
-    for category in ("exact", "guessed", "transition"):
+    for category in SAMPLE_CATEGORIES:
         metrics[category] = compute_metrics(samples[samples["sample_category"] == category])
 
     in_layer = samples[~samples["is_transition"]]
@@ -144,7 +147,7 @@ def evaluate_pair(
 def flatten_pair_metrics(metrics: Dict[str, Dict[str, float]]) -> Dict[str, float]:
     """One flat row: overall metrics unprefixed, per-category metrics prefixed (e.g. exact_mae)."""
     row = dict(metrics["overall"])
-    for category in ("exact", "guessed", "transition"):
+    for category in SAMPLE_CATEGORIES:
         for key in ("n_samples", "bias", "mae", "fraction_inside_band"):
             row[f"{category}_{key}"] = metrics[category].get(key, np.nan)
     return row
@@ -170,7 +173,7 @@ def zone_confusion(pooled: pd.DataFrame) -> pd.DataFrame:
 
 def overall_summary(pooled: pd.DataFrame, layer_table: Optional[pd.DataFrame]) -> Dict[str, object]:
     summary = {"all_samples": compute_metrics(pooled)}
-    for category in ("exact", "guessed", "transition"):
+    for category in SAMPLE_CATEGORIES:
         summary[f"{category}_samples"] = compute_metrics(pooled[pooled["sample_category"] == category])
     if layer_table is not None and len(layer_table):
         err = layer_table["synthetic_ic_mean"] - layer_table["measured_ic_mean"]

@@ -234,7 +234,9 @@ def build_ic_profile(kind: str, path: Path, fallback_surface_m_nap: float) -> Tu
                        "ic": samples["synthetic_ic"], "class_code": samples["source_class_code"]})
     notes = []
     if (~layers_df["supported"]).any():
-        notes.append("unsupported layers: " + "; ".join(layers_df.loc[~layers_df["supported"], "soil_name_nen5104"].astype(str)))
+        unsupported = layers_df[~layers_df["supported"]]
+        notes.append("unsupported layers (Ic interpolated where marked ~): " + "; ".join(
+            f"{'~' if r.ic_interpolated else '?'}{r.soil_name_nen5104}" for r in unsupported.itertuples()))
     if layers_df["is_guess"].any():
         notes.append("guessed layers: " + "; ".join(
             f"{r.soil_name_nen5104}->{r.class_code}" for r in layers_df[layers_df["is_guess"]].itertuples()))

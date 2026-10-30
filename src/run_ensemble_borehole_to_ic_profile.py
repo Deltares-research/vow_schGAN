@@ -70,11 +70,11 @@ def _run_checks(layers_df, ensemble_df, seeds, run_info, rebuild_fn, n_realizati
     supported_rows = ensemble_df[~ensemble_df["source_class_code"].isna() & (ensemble_df["source_class_code"] != "")]
     non_transition_supported = supported_rows[~supported_rows["is_transition"]]
     n_nan_supported = non_transition_supported["ic_median"].isna().sum()
-    unsupported_rows = ensemble_df[ensemble_df["source_class_code"].isna()]
+    unsupported_rows = ensemble_df[ensemble_df["source_class_code"].isna() & ~ensemble_df["is_interpolated"]]
     n_finite_unsupported = unsupported_rows["ic_median"].notna().sum() if len(unsupported_rows) else 0
     checks.append(("PASS" if n_nan_supported == 0 and n_finite_unsupported == 0 else "FAIL",
-                    f"finite where supported ({n_nan_supported} unexpected NaN), gaps where unsupported "
-                    f"({n_finite_unsupported} unexpected finite values)"))
+                    f"finite where supported ({n_nan_supported} unexpected NaN), gaps where unsupported and not "
+                    f"interpolated ({n_finite_unsupported} unexpected finite values)"))
 
     same_class_boundaries = 0
     for i in range(len(layers_df) - 1):

@@ -44,7 +44,7 @@ from modules.borehole_ic.xml_readers import read_borehole_xml  # noqa: E402
 
 PROFILE_COLUMNS = [
     "depth_m", "elevation_m_nap", "synthetic_ic", "triangle", *all_composition_columns(),
-    "source_class_code", "evaluated_class_code", "is_transition", "is_fallback", "note",
+    "source_class_code", "evaluated_class_code", "is_transition", "is_fallback", "is_interpolated", "note",
 ]
 
 

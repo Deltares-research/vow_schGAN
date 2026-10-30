@@ -114,19 +114,23 @@ def check_finite_in_supported(samples_df: pd.DataFrame, layers_df: pd.DataFrame)
 
 
 def check_unsupported_gaps_preserved(samples_df: pd.DataFrame, layers_df: pd.DataFrame) -> Check:
+    """Unsupported layers are either NaN gaps or flagged `is_interpolated` - never silently filled."""
     unsupported_layers = layers_df[~layers_df["supported"]]
-    missing = []
+    interpolated = samples_df["is_interpolated"] if "is_interpolated" in samples_df else pd.Series(False, index=samples_df.index)
+    bad, n_interp = [], 0
     for layer in unsupported_layers.itertuples():
-        rows = samples_df[
-            (~samples_df["is_transition"])
-            & (samples_df["source_layer_index"] == layer.layer_index)
-        ]
-        if not len(rows) or rows["synthetic_ic"].notna().any():
-            missing.append(layer.layer_index)
-    ok = len(missing) == 0
+        mask = (~samples_df["is_transition"]) & (samples_df["source_layer_index"] == layer.layer_index)
+        rows = samples_df[mask]
+        filled = rows["synthetic_ic"].notna()
+        if not len(rows) or (filled & ~interpolated[mask]).any():
+            bad.append(layer.layer_index)
+        elif filled.any():
+            n_interp += 1
+    ok = len(bad) == 0
     return (
-        "unsupported_layers_preserved_as_gaps", ok,
-        f"{len(unsupported_layers)} unsupported layer(s); {len(missing)} not cleanly preserved as NaN gaps",
+        "unsupported_layers_gap_or_interpolated", ok,
+        f"{len(unsupported_layers)} unsupported layer(s): {n_interp} interpolated, "
+        f"{len(unsupported_layers) - n_interp - len(bad)} left as gaps, {len(bad)} filled without the interpolation flag",
     )
 
 

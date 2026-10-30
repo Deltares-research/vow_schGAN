@@ -65,7 +65,8 @@ def build_ensemble(
         if layers_df is None:
             layers_df = l_df
             run_info = r_info
-            base_columns = s_df[["depth_m", "elevation_m_nap", "is_transition", "source_layer_index", "source_class_code"]]
+            base_columns = s_df[["depth_m", "elevation_m_nap", "is_transition", "source_layer_index",
+                                 "source_class_code", "is_interpolated"]]
         ic_columns[f"ic_realization_{r}"] = s_df["synthetic_ic"].to_numpy()
 
     ensemble_df = base_columns.copy()

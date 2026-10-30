@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # add src/ to sys.
 from modules.borehole_ic.pair_evaluation import ROBERTSON_THRESHOLDS  # noqa: E402
 from modules.borehole_ic.triangles import CLASS_COLORS  # noqa: E402
 
-_CATEGORY_COLORS = {"exact": "tab:blue", "guessed": "tab:orange", "transition": "tab:gray"}
+_CATEGORY_COLORS = {"exact": "tab:blue", "guessed": "tab:orange", "interpolated": "tab:purple", "transition": "tab:gray"}
 _FAMILY_ORDER = ["Z", "L", "K", "V", "G"]
 
 

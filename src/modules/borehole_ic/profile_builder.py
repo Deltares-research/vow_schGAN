@@ -14,6 +14,11 @@ Transitions between two supported groups:
   spaces and cannot be blended, so each side's Ic is evaluated in its own
   triangle and the two Ic values are blended with the same smoothstep weight.
   These rows carry no composition (NaN x/y/percentages).
+
+Unsupported layers (no recognisable soil name, e.g. "grondNietGespecificeerd")
+get an interpolated Ic (`fill_unsupported_gaps`): linear between the known
+layers above and below (or the nearest known value at the top/bottom), plus
+correlated jitter. These rows are flagged `is_interpolated`.
 """
 
 import sys
@@ -220,6 +225,8 @@ def build_synthetic_profile(
         rows.append(row)
 
     samples_df = pd.DataFrame(rows)
+    samples_df, interpolated_layers = fill_unsupported_gaps(samples_df, layers, correlation_length_m, random_seed)
+    layers_df["ic_interpolated"] = layers_df["layer_index"].isin(interpolated_layers)
     run_info = {
         "groups": [{"class_code": g["class_code"], "supported": g["supported"], "layer_indices": g["layer_indices"],
                     "triangle": g["spec"].key if g.get("spec") else None,
@@ -237,6 +244,84 @@ def build_synthetic_profile(
 
 def _ic_or_nan(value: Optional[float]) -> float:
     return float(value) if value is not None else np.nan
+
+
+def _ou_noise(depths: np.ndarray, correlation_length_m: float, rng: np.random.Generator) -> np.ndarray:
+    """Unit-variance correlated (Ornstein-Uhlenbeck) noise on the given depths, same model as the sampler."""
+    noise = np.empty(len(depths))
+    noise[0] = rng.standard_normal()
+    for k in range(1, len(depths)):
+        rho = np.exp(-(depths[k] - depths[k - 1]) / correlation_length_m)
+        noise[k] = rho * noise[k - 1] + np.sqrt(1.0 - rho ** 2) * rng.standard_normal()
+    return noise
+
+
+def _layer_spread(samples_df: pd.DataFrame, layer_index: int) -> float:
+    """Standard deviation of the synthetic Ic inside one (supported) layer, transitions excluded."""
+    rows = samples_df[(samples_df["source_layer_index"] == layer_index) & (~samples_df["is_transition"])]
+    values = rows["synthetic_ic"].dropna()
+    return float(values.std(ddof=0)) if len(values) > 1 else 0.0
+
+
+def fill_unsupported_gaps(
+    samples_df: pd.DataFrame, layers: List[dict], correlation_length_m: float, random_seed: int,
+) -> Tuple[pd.DataFrame, set]:
+    """Give unsupported layers an interpolated Ic instead of leaving a gap.
+
+    A run of consecutive unsupported rows (e.g. "grondNietGespecificeerd") is filled with
+    - between two known layers: a straight line from the last Ic above to the first Ic below;
+    - at the top or bottom (one known neighbour): the nearest known Ic, held constant;
+    plus correlated noise (same OU model and correlation length as the sampler), pinned to
+    zero at the known end(s) so the profile joins without a jump, scaled to the Ic spread
+    of the neighbouring layer(s). The noise has its own random stream (derived from
+    `random_seed` and the run position), so the sampled layers are not affected.
+    Filled rows get `is_interpolated=True` and keep no composition (x, y, percentages NaN).
+    A borehole without any supported layer is left as it is.
+    """
+    df = samples_df.copy()
+    df["is_interpolated"] = False
+    if not len(df):
+        return df, set()
+    unsupported = np.array([not layer["supported"] for layer in layers])
+    layer_idx = df["source_layer_index"].to_numpy(dtype=int)
+    ic = df["synthetic_ic"].to_numpy(dtype=float).copy()
+    gap_rows = np.flatnonzero((~df["is_transition"].to_numpy(dtype=bool)) & np.isnan(ic) & unsupported[layer_idx])
+    if not len(gap_rows):
+        return df, set()
+
+    depths = df["depth_m"].to_numpy(dtype=float)
+    filled_layers = set()
+    for run in np.split(gap_rows, np.flatnonzero(np.diff(gap_rows) > 1) + 1):
+        above, below = run[0] - 1, run[-1] + 1
+        has_above = above >= 0 and np.isfinite(ic[above])
+        has_below = below < len(ic) and np.isfinite(ic[below])
+        if not (has_above or has_below):
+            continue
+        sigma = float(np.mean([_layer_spread(df, layer_idx[k]) for k, ok in ((above, has_above), (below, has_below)) if ok]))
+        segment = np.arange(above if has_above else run[0], (below if has_below else run[-1]) + 1)
+        rng = np.random.default_rng((int(random_seed), 7919, int(run[0])))
+        noise = _ou_noise(depths[segment], correlation_length_m, rng)
+        span = depths[segment[-1]] - depths[segment[0]]
+        t = (depths[segment] - depths[segment[0]]) / span if span > 0 else np.zeros(len(segment))
+        if has_above and has_below:
+            base = ic[above] + (ic[below] - ic[above]) * t
+            noise = noise - (noise[0] + (noise[-1] - noise[0]) * t)
+            mode = "linear between the layers above and below"
+        elif has_above:
+            base = np.full(len(segment), ic[above])
+            noise = noise - noise[0]
+            mode = "nearest value above (bottom of borehole)"
+        else:
+            base = np.full(len(segment), ic[below])
+            noise = noise - noise[-1]
+            mode = "nearest value below (top of borehole)"
+        values = base + sigma * noise
+        ic[run] = values[run - segment[0]]
+        df.loc[df.index[run], "is_interpolated"] = True
+        df.loc[df.index[run], "note"] = f"Ic interpolated across unsupported layer: {mode}, jitter sd {sigma:.3f}"
+        filled_layers.update(int(i) for i in layer_idx[run])
+    df["synthetic_ic"] = ic
+    return df, filled_layers
 
 
 def _empty_sample(composition_columns) -> dict:

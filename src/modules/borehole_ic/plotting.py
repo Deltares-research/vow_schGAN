@@ -55,13 +55,14 @@ def _layer_bands(layers_df: pd.DataFrame, surface_elevation_m_nap: float, panel:
 
     Labels: exact NEN class -> class code in both panels; generic guess
     (e.g. "Zand*") -> raw BRO soil name in the borehole column, generic code
-    in the Ic panels; unsupported -> "? <raw name>" in both.
+    in the Ic panels; unsupported with interpolated Ic -> "~ <raw name>";
+    unsupported and left as a gap -> "? <raw name>".
     """
     bands = []
     for row in layers_df.itertuples():
         raw = row.soil_name_nen5104 or "no soil name"
         if row.class_code is None:
-            label = f"? {raw}"
+            label = f"~ {raw}" if getattr(row, "ic_interpolated", False) else f"? {raw}"
         elif getattr(row, "is_guess", False) and panel == "borehole":
             label = raw
         else:
